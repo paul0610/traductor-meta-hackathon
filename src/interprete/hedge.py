@@ -8,10 +8,10 @@ from typing import Awaitable, Callable, TypeVar
 T = TypeVar("T")
 
 
-async def hedged(attempt: Callable[[], Awaitable[T]], after_s: float,
+async def hedged(first_try: Callable[[], Awaitable[T]], second_try: Callable[[], Awaitable[T]], after_s: float,
                  on_hedge: Callable[[], None] | None = None) -> T:
-    """At most two attempts. Raises the last error if both fail; cancelling this cancels both."""
-    first = asyncio.ensure_future(attempt())
+    """Raises the last error if both fail; cancelling this cancels both."""
+    first = asyncio.ensure_future(first_try())
     running: set[asyncio.Future] = {first}
     try:
         await asyncio.wait(running, timeout=after_s)
@@ -19,7 +19,7 @@ async def hedged(attempt: Callable[[], Awaitable[T]], after_s: float,
             return first.result()
         if on_hedge is not None:
             on_hedge()
-        running = {f for f in running if not f.done()} | {asyncio.ensure_future(attempt())}
+        running = {f for f in running if not f.done()} | {asyncio.ensure_future(second_try())}
         error: BaseException | None = first.exception() if first.done() else None
         while running:
             done, running = await asyncio.wait(running, return_when=asyncio.FIRST_COMPLETED)

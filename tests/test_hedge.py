@@ -22,7 +22,7 @@ def attempts(*behaviours):
 
 
 def run(attempt, after=0.02, seen=None):
-    return asyncio.run(hedged(attempt, after, (lambda: seen.append(1)) if seen is not None else None))
+    return asyncio.run(hedged(attempt, attempt, after, (lambda: seen.append(1)) if seen is not None else None))
 
 
 def test_a_fast_answer_starts_no_second_attempt():
@@ -69,7 +69,7 @@ def test_cancelling_cancels_both_attempts():
 
     async def main():
         with pytest.raises(TimeoutError):
-            await asyncio.wait_for(hedged(attempt, 0.01), 0.05)
+            await asyncio.wait_for(hedged(attempt, attempt, 0.01), 0.05)
 
     asyncio.run(main())
     assert len(cancelled) == 2

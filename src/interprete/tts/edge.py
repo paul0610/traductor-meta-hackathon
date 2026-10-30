@@ -10,7 +10,6 @@ from __future__ import annotations
 import asyncio
 import io
 from dataclasses import dataclass
-from typing import Callable
 
 import edge_tts
 import numpy as np
@@ -18,11 +17,11 @@ import soundfile as sf
 import soxr
 
 from ..clock import now
-from ..hedge import hedged
 
 TRIM_THRESHOLD_DB = -50.0      # peak level per 5 ms window below which audio counts as silence
 TRIM_MARGIN_S = 0.060
-HEDGE_AFTER_S = 2.0
+WORDS_PER_S = 3.0              # en-US-GuyNeural at rate 0: p50 3.0-3.2 over 53 clauses, 30/10
+MAX_RATE_UP = 0.25
 
 
 @dataclass(slots=True)
@@ -63,21 +62,12 @@ def decode_mp3(mp3: bytes) -> tuple[np.ndarray, int]:
     return x, rate
 
 
-async def synthesize(text: str, voice: str, out_rate: int, *, rate_pct: int = 0) -> TtsResult:
-    t_request = now()
-    t_first = None
-    buf = bytearray()
-    comm = edge_tts.Communicate(text, voice, rate=f"{rate_pct:+d}%")
-    async for part in comm.stream():
-        if part["type"] == "audio":
-            if t_first is None:
-                t_first = now()
-            buf += part["data"]
-    t_end = now()
+async def finish(mp3: bytes, out_rate: int, t_request: float, t_first: float | None, t_end: float) -> TtsResult:
+    """Decode, resample and trim a finished MP3, off the event loop."""
 
     def _post() -> tuple[np.ndarray, float, float, float]:
         t0 = now()
-        x, rate = decode_mp3(bytes(buf))
+        x, rate = decode_mp3(mp3)
         decode_s = now() - t0
         if rate != out_rate:
             x = soxr.resample(x, rate, out_rate)
@@ -87,13 +77,31 @@ async def synthesize(text: str, voice: str, out_rate: int, *, rate_pct: int = 0)
     y, decode_s, lead, tail = await asyncio.to_thread(_post)
     pcm = (np.clip(y, -1.0, 1.0) * 32767.0).astype("<i2").tobytes()
     return TtsResult(pcm, out_rate, len(y) / out_rate, t_request, t_first, t_end, now(),
-                     decode_s, lead, tail, len(buf))
+                     decode_s, lead, tail, len(mp3))
 
 
-async def synthesize_hedged(text: str, voice: str, out_rate: int, on_hedge: Callable[[], None] | None = None) -> TtsResult:
-    """Edge sometimes stalls 3.4 s and then answers NoAudioReceived, whatever the text (measured 2 clauses in 56).
+async def synthesize(text: str, voice: str, out_rate: int, *, rate_pct: int = 0) -> TtsResult:
+    """One clause over its own connection; `EdgeVoice` is the fast path, this one has nothing to keep alive."""
+    t_request = now()
+    t_first = None
+    buf = bytearray()
+    comm = edge_tts.Communicate(text, voice, rate=f"{rate_pct:+d}%")
+    async for part in comm.stream():
+        if part["type"] == "audio":
+            if t_first is None:
+                t_first = now()
+            buf += part["data"]
+    return await finish(bytes(buf), out_rate, t_request, t_first, now())
 
-    A retry after that no longer fits the 4 s budget, so a second request starts
-    at HEDGE_AFTER_S (above the 1.9 s worst healthy synthesis seen) and races the first.
+
+def isochrony_pct(text: str, src_s: float | None) -> int:
+    """Edge `rate` that brings the voice close to the clause it translates (SPEC §4.1, ±15 % goal).
+
+    Only ever faster: slower would add lag at D = 0, and the capped case still
+    leaves the voice intelligible. A clause cut short by the ASR can look tiny,
+    so `src_s` is floored at the length a person needs to say one short word.
     """
-    return await hedged(lambda: synthesize(text, voice, out_rate), HEDGE_AFTER_S, on_hedge)
+    if src_s is None:
+        return 0
+    expected_s = len(text.split()) / WORDS_PER_S
+    return int(min(max(expected_s / max(src_s, 0.3) - 1.0, 0.0), MAX_RATE_UP) * 100)
