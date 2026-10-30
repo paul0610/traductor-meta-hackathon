@@ -26,6 +26,7 @@ class Settings:
     delay_s: float
     voice_under_db: float
     av_offset_ms: float
+    overlay_hide_from_capture: bool
 
 
 def load() -> Settings:
@@ -37,6 +38,7 @@ def load() -> Settings:
         delay_s=float(os.environ.get("RTT_DELAY_S", "5.5")),
         voice_under_db=float(os.environ.get("RTT_VOICE_UNDER_DB", "-20")),
         av_offset_ms=float(os.environ.get("RTT_AV_OFFSET_MS", "0")),
+        overlay_hide_from_capture=os.environ.get("RTT_OVERLAY_HIDE_FROM_CAPTURE", "0") == "1",
     )
 
 

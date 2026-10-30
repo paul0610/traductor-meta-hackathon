@@ -16,7 +16,6 @@ import json
 import shutil
 import sys
 import time
-import wave
 from pathlib import Path
 
 import numpy as np
@@ -24,30 +23,11 @@ import numpy as np
 from interprete import config
 from interprete.asr.meta_realtime import MetaRealtimeAsr
 from interprete.audio.capture import MicCapture, QueueFeeder, To16k
+from interprete.audio.fixture import RATE, read_wav, replay, save_wav
 from interprete.clock import now
 from interprete.contracts import AsrEvent, AsrKind, Channel
 from interprete.metrics import asr_stats
 from interprete.metrics.jsonl import Metrics
-
-RATE = 16000
-BLOCK = 320                     # 20 ms at 16 kHz
-
-
-def save_wav(path: Path, pcm: bytes) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with wave.open(str(path), "wb") as w:
-        w.setnchannels(1)
-        w.setsampwidth(2)
-        w.setframerate(RATE)
-        w.writeframes(pcm)
-
-
-def read_wav(path: str) -> bytes:
-    with wave.open(path, "rb") as w:
-        if (w.getnchannels(), w.getsampwidth(), w.getframerate()) != (1, 2, RATE):
-            raise SystemExit(f"{path}: need mono 16-bit 16 kHz (ffmpeg -i in -ac 1 -ar 16000 -sample_fmt s16 out.wav)")
-        return w.readframes(w.getnframes())
-
 
 class Tap:
     """Keeps the PCM sent to the ASR and the t_capture of its first sample."""
@@ -63,19 +43,7 @@ class Tap:
 
 
 async def wav_source(pcm: bytes, q: asyncio.Queue, tap: Tap, stop: asyncio.Event) -> None:
-    """Replays a WAV at real time against an absolute schedule; t_capture is exact by construction."""
-    t_start = now() + 0.05
-    step = BLOCK * 2
-    for k, i in enumerate(range(0, len(pcm), step)):
-        t_cap = t_start + k * BLOCK / RATE
-        delay = t_cap + BLOCK / RATE - now()      # a block "exists" once its last sample is captured
-        if delay > 0:
-            await asyncio.sleep(delay)
-        chunk = pcm[i:i + step]
-        tap.add(t_cap, chunk)
-        await q.put((t_cap, chunk))
-        if stop.is_set():
-            break
+    await replay(pcm, q, stop, tap.add)
     await asyncio.sleep(3.0)                      # let the last turn complete
     stop.set()
 

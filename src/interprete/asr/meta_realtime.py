@@ -55,6 +55,7 @@ class MetaRealtimeAsr:
         self.token_form: str | None = None      # "bearer" or "bare": which accessToken form the server took
         self._turn: str | None = None
         self.audio_sent_s = 0.0
+        self.t_down: float | None = None        # when the link dropped; None while up and before the first session
 
     def _handshake(self, bearer: bool) -> str:
         h = {
@@ -121,6 +122,7 @@ class MetaRealtimeAsr:
                 await self._session(pcm_q, on_event, stop)
                 backoff = 0.5
             except (OSError, websockets.exceptions.WebSocketException, AsrError) as exc:
+                self.t_down = self.t_down or now()
                 self._emit("asr", channel=self.channel, kind="reconnect", error=str(exc)[:300], backoff_s=backoff)
                 if isinstance(exc, AsrError) and "handshake" in str(exc):
                     raise
@@ -131,6 +133,7 @@ class MetaRealtimeAsr:
         ws, session_id = await self._connect()
         self.clock.start_session(session_id)
         self._turn = None
+        self.t_down = None
         t_open = now()
         self._emit("asr", channel=self.channel, kind="session", session_id=session_id,
                    token_form=self.token_form, mode=self.mode, encoding=self.encoding)
@@ -144,6 +147,9 @@ class MetaRealtimeAsr:
                 try:
                     t_capture, pcm = await asyncio.wait_for(pcm_q.get(), 0.5)
                 except TimeoutError:
+                    if t_first_send is not None:           # a stalled source must not fall below real time (1008)
+                        await ws.send(bytes(bytes_per_s // 2))
+                        sent_s += 0.5
                     continue
                 if t_first_send is None:
                     t_first_send = now()

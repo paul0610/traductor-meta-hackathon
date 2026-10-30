@@ -1,5 +1,5 @@
 @echo off
-rem One click launcher: outgoing interpreter (mic -> ASR -> Spark -> TTS -> CABLE Input).
+rem One click launcher: both directions (mic to English on CABLE Input, system audio to Spanish subtitles).
 rem Extra arguments pass through, e.g.  Interprete.bat --record-cable
 title Interprete ES-EN
 cd /d "%~dp0"
@@ -16,8 +16,9 @@ if not exist ".env" (
     goto end
 )
 
-echo Interprete ES-EN    F9 corta y vuelve a tu voz    F8 mudo    Ctrl-C salir
-echo En la videollamada elige "CABLE Output" como microfono.
+echo Interprete ES-EN    F7 aviso    F8 mudo    F9 tu voz cruda on/off    F10 mic fisico    Ctrl-C salir
+echo En la videollamada elige "CABLE Output" como microfono: al otro lado solo llega ingles.
+echo Mientras esta ventana siga abierta, lo que oye el microfono va a la API de Meta. Cierrala al terminar.
 echo.
 uv run --locked python -m interprete.app %*
 

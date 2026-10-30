@@ -98,10 +98,10 @@ class To16k:
 class QueueFeeder:
     """Capture consumer that hands `(t_capture, pcm16)` to an asyncio queue, dropping the oldest when full."""
 
-    def __init__(self, loop, q, convert: Callable[[np.ndarray], bytes]) -> None:
+    def __init__(self, loop, q, convert: Callable[[np.ndarray], bytes] | None = None) -> None:
         self.loop = loop
         self.q = q
-        self.convert = convert
+        self.convert = convert or (lambda pcm: pcm)     # None: the source already gives PCM16 bytes
         self.dropped = 0
 
     def _offer(self, item) -> None:
@@ -110,7 +110,7 @@ class QueueFeeder:
             self.dropped += 1
         self.q.put_nowait(item)
 
-    def __call__(self, t_capture: float, block: np.ndarray) -> None:
+    def __call__(self, t_capture: float, block) -> None:
         self.loop.call_soon_threadsafe(self._offer, (t_capture, self.convert(block)))
 
 

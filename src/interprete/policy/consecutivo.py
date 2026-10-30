@@ -33,6 +33,11 @@ class Consecutive:
         self._seq = 0
         self._anon = 0
 
+    def take_seq(self) -> int:
+        """Next emission slot, also for what does not come from the ASR (the initial notice)."""
+        seq, self._seq = self._seq, self._seq + 1
+        return seq
+
     def _turn(self, ev: AsrEvent) -> tuple[str, _Turn]:
         key = ev.turn_id if ev.turn_id is not None else f"anon{self._anon}"
         return key, self._turns.setdefault(f"{ev.session_id}:{key}", _Turn())
@@ -66,12 +71,11 @@ class Consecutive:
                 source = "partial_arrival"
             commit = Commit(
                 utterance_id=f"{self.channel.value}:{ev.session_id}:{key}",
-                commit_id=0, seq=self._seq, channel=self.channel, text_src=text, prefix_src="",
+                commit_id=0, seq=self.take_seq(), channel=self.channel, text_src=text, prefix_src="",
                 boundary="speechComplete", t_src_start=t_start, t_src_end=turn.t_end,
                 t_src_source=source, t_commit=ev.t_recv,
             )
-            self._seq += 1
-            self._emit("commit", seq=commit.seq, utterance_id=commit.utterance_id, commit_id=0,
+            self._emit("commit", channel=self.channel.value, seq=commit.seq, utterance_id=commit.utterance_id, commit_id=0,
                        boundary=commit.boundary, text_src=text, t_src_start=t_start, t_src_end=turn.t_end,
                        t_src_source=source, t_commit=commit.t_commit, t_partial_first=turn.t_partial_first)
             return commit
