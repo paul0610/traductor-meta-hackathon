@@ -91,7 +91,7 @@ async def synthesize(text: str, voice: str, out_rate: int, *, rate_pct: int = 0)
 
 
 async def synthesize_hedged(text: str, voice: str, out_rate: int, on_hedge: Callable[[], None] | None = None) -> TtsResult:
-    """Edge sometimes stalls 3.4 s and then answers NoAudioReceived, whatever the text (measured 2 clauses in 35).
+    """Edge sometimes stalls 3.4 s and then answers NoAudioReceived, whatever the text (measured 2 clauses in 56).
 
     A retry after that no longer fits the 4 s budget, so a second request starts
     at HEDGE_AFTER_S (above the 1.9 s worst healthy synthesis seen) and races the first.
