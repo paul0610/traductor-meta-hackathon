@@ -12,10 +12,11 @@ Work in progress during the hackathon week. Daily logs with measured numbers liv
 
 | Piece | State |
 |---|---|
-| Repo, SPEC, contracts, clock, seq-ordered deadline scheduler | in progress |
-| Realtime ASR client (Muse Voice Transcribe) | in progress |
-| Outgoing consecutive chain: mic → ASR → Spark → TTS → virtual mic | in progress |
-| Incoming chain: loopback → ASR → Spark → subtitles | planned |
+| Repo, SPEC, contracts, clock, seq-ordered deadline scheduler | done |
+| Realtime ASR client (Muse Voice Transcribe) | done |
+| Outgoing consecutive chain: mic → ASR → Spark → TTS → virtual mic | done, measured with a real voice |
+| Incoming chain: loopback → ASR → Spark → subtitles | done, measured on real system audio |
+| Safety: silent rest state, F9 latch, F10 via Core Audio, watchdog, restore on exit | done, physical keys pending |
 | Incremental clause commits (LA-2) | planned |
 | Synchronized dub with fixed delay D | planned |
 
@@ -43,7 +44,16 @@ uv run python scripts/test_cable.py          # Edge TTS -> CABLE Input, verified
 uv run python scripts/asr_live.py            # live mic -> Muse Voice Transcribe, events printed
 ```
 
-Then double-click **`Interprete.bat`** to start the outgoing interpreter and pick `CABLE Output` as the microphone in your call app. F9 cuts back to your own voice, F8 mutes.
+Before a call, `uv run python scripts/warmcheck.py` tests everything a call needs and changes nothing. Then double-click **`Interprete.bat`**: it starts both directions and the subtitle overlay. In your call app pick `CABLE Output` as the microphone, unmuted, with noise cancellation off. The other side only hears the English voice; your raw voice reaches the cable only if you ask for it.
+
+| Key | Action |
+|---|---|
+| F7 | Tell the other side they are hearing an AI interpreter |
+| F8 | Mute everything / unmute |
+| F9 | Your raw voice on the cable, latched; F9 again to interpret again |
+| F10 | F9, plus the physical mic back as the Windows default |
+
+To check it without speaking: `uv run python scripts/make_fixtures.py`, then `uv run python scripts/gate_60s.py --fixtures` runs both chains on synthetic voices and judges the run from its log.
 
 Dependencies are pinned exactly and locked (`uv.lock`), resolved with a supply-chain cooldown (`exclude-newer = "2026-10-22"`).
 

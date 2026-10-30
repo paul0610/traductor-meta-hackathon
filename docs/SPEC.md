@@ -78,6 +78,8 @@ All `t_*` fields use one clock (§7.2). No gate is considered passed without the
 - **Cable sample rate:** open `CABLE Input` at the endpoint's real rate (`sd.query_devices(i)["default_samplerate"]`) or with WASAPI auto-convert; never assume 48 kHz. Same for the mic: request 16 kHz with auto-convert, or resample with `soxr`. *[verified 2026-10-29 on this PC: WASAPI `CABLE Input` 48 000 Hz, `CABLE Output` 48 000 Hz, Realtek mic array 48 000 Hz; MME/DirectSound duplicates report 44 100 Hz]*
 - **VB-CABLE** is installed on this PC (one cable is enough with a passive incoming tap). *[verified 2026-10-29]*
 - **Headphones are mandatory on my side.** With speakers, the mic captures the remote's voice and the outgoing chain translates it back (translated echo). `scripts/warmcheck.py` warns when the default output does not look like headphones (name heuristic; never blocks).
+- **Windows volume of `CABLE Input`.** The slider of the playback endpoint scales everything written to the cable, and no log shows it: at 22 % (−23 dB, found on this PC 30/10) the English voice reaches the call at −41 dBFS and every internal number still looks perfect. Both `warmcheck.py` and the app read it at start and warn; it is set by hand, once, to 100 %.
+- **Left running, the interpreter keeps listening.** Everything the mic hears goes to the ASR, including a phone call next to it and music from the speakers, and is written to `logs/` (gitignored). Close it after the call.
 
 ---
 
@@ -154,7 +156,7 @@ One `asyncio.TaskGroup` per channel plus a shared one. `sounddevice` callbacks a
 | `mixer` (output callback, `CABLE Input`) | TTS ring, delayed-voice ring, live mic ring | cable | sums by state (§7.6) | underrun → zeros, `cable_gaps += 1`; never blocks |
 | `turns` | copy of `q_events[in]` | `scheduler.yield_current()`, UI | **sustained** speech on IN while OUT is playing (≥ 0.7 s without `speechEnd`, or a partial with ≥ 3 words; an "uh-huh" does not count) → **yield the turn**: the current chunk finishes (200 ms fade in DUB), the rest of the utterance is dropped and shown in grey on my overlay, red band, `yields += 1`. No resumption | piece 3 (Sunday); `yield_current()` exists from Thursday |
 | `video` (two threads) | HD webcam by name | OBS Virtual Camera | capture → deque → emit frame with `t_capture ≤ now − D`; title card during the first D s; D fixed per session | piece 10 (Saturday); F9 jumps to live together with audio |
-| `safety` | hotkeys, watchdog | mixer state, `q_metrics` | F7 start, F8 pause/mute, F9 kill (< 200 ms), F10 restore default mic (< 1 s, pycaw); 2 s watchdog | `finally` + `atexit` + signal: restore device, close cable, last virtual-camera frame = title card |
+| `safety` | hotkeys, watchdog | mixer state, `q_metrics` | launching is "Ready"; F7 plays the initial notice, F8 pause/mute, F9 kill (< 200 ms), F10 restore default mic (< 1 s, pycaw); 2 s watchdog | `finally` + `atexit` + signal: restore device, close cable, last virtual-camera frame = title card |
 | `metrics` | `q_metrics` | `logs/run_<date>.jsonl` | single writer; one line per event | on disk failure keep running without metrics and say so |
 
 The unit of cancellation is `utterance_id`: F9 and turn yields mark utterances cancelled; `mt`, `tts` and the scheduler check before every step. Speculation tasks are children of `policy[c]`. Reconnecting the ASR changes `session_id`, so `utterance_id`s never collide.
