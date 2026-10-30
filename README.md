@@ -17,7 +17,7 @@ Work in progress during the hackathon week. Daily logs with measured numbers liv
 | Outgoing consecutive chain: mic → ASR → Spark → TTS → virtual mic | done, measured with a real voice |
 | Incoming chain: loopback → ASR → Spark → subtitles | done, measured on real system audio |
 | Safety: silent rest state, F9 latch, F10 via Core Audio, watchdog, restore on exit | done, physical keys pending |
-| Incremental clause commits (LA-2) | planned |
+| Incremental clause commits (LA-2), both directions | done, measured on synthetic voices |
 | Synchronized dub with fixed delay D | planned |
 
 ## How it works (short)
@@ -30,7 +30,7 @@ IN:  system loopback ─► Muse Voice Transcribe (en) ─► Muse Spark (en→e
 Design, contracts, clock model and safety rules: [`docs/SPEC.md`](docs/SPEC.md).
 
 Honest notes:
-- **There is no Meta text-to-speech model.** The English voice is Microsoft Edge TTS. Meta models do the listening (ASR, including turn and timing events) and the translating.
+- **There is no Meta text-to-speech model** (checked against the docs, the live model list and the cookbook on Oct 30). The English voice is Microsoft Edge TTS. Meta models do the listening (ASR, including turn and timing events) and the translating.
 - Requires Windows 11, [VB-CABLE](https://vb-audio.com/Cable/) and headphones (with speakers the mic would re-translate the other side's voice).
 
 ## Run it
