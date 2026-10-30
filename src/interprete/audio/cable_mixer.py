@@ -221,8 +221,8 @@ class CableMixer:
                 off = max(off, pos)
                 self._items.popleft()
                 head.actual_start = t_cb + off / self.rate
-                # a chunk scheduled back-to-back with the previous one that starts late = audible gap
-                if head.start_at <= self._last_end + 0.002 and head.actual_start - head.start_at > 2 * self.block / self.rate:
+                # planned back-to-back, yet the audio resumed late after the previous chunk = audible gap
+                if head.start_at <= self._last_end + 0.002 and head.actual_start - self._last_end > 2 * self.block / self.rate:
                     self.cable_gaps += 1
                 self._cur = head
                 tts_from = min(tts_from, off)

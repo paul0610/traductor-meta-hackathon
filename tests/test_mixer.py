@@ -38,6 +38,15 @@ def tts(seq=0, value=0.25, dur=0.05):
                     sample_rate=RATE, duration_s=dur, t_src_start=0.0, t_src_end=None, deadline=0.0)
 
 
+def test_a_chunk_planned_too_early_is_no_gap_if_the_audio_is_continuous(mixer):
+    """The scheduler's plan drifts from the real end by a few ms; only real silence counts."""
+    mixer.play(tts(0, dur=0.015), 1.0)
+    mixer.play(tts(1, dur=0.015), 1.001)       # planned long before the first really ends
+    for _ in range(4):
+        block(mixer)
+    assert mixer.cable_gaps == 0
+
+
 def test_at_rest_the_receiver_hears_nothing_of_the_raw_voice(mixer):
     assert mixer.state is State.SILENT
     assert np.all(block(mixer) == 0.0)

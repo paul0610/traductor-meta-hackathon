@@ -42,13 +42,19 @@ from .metrics.jsonl import Metrics, read
 from .metrics.summary import summarize
 from .mt.spark import Spark
 from .policy.consecutivo import Consecutive
+from .policy.incremental import Incremental
 from .policy.scheduler import MT_TIMEOUT_S, TTS_TIMEOUT_S, Scheduler
 from .safety import ExitGuard, Watchdog
-from .tts.edge import synthesize_hedged
+from .tts.edge import isochrony_pct
+from .tts.edge_session import EdgeVoice
 
 MT_ERRORS = (TimeoutError, openai.APIError, json.JSONDecodeError, KeyError)
 ASR_FALLBACK_S = 3.0            # ASR down this long: live voice, nothing can be translated
 CABLE_MIN_VOLUME = 0.95
+CATCH_UP_BACKLOG_S = 3.0        # behind by more than this: the next clause is spoken faster
+CATCH_UP_PCT = 10
+WORKERS = 2                     # concurrent Spark calls and syntheses, outgoing
+POLICIES = {"consecutive": Consecutive, "incremental": Incremental}
 NOTICE_EN = ("Hi, a quick note before we start: I speak Spanish and you are hearing an AI interpreter. "
              "It runs a few seconds behind me, so please give me a moment after you finish speaking.")
 SIM_LINES = [
@@ -76,12 +82,13 @@ class Outgoing:
         self.loop = asyncio.get_running_loop()
         self.mixer = CableMixer(settings.cable_name, emit=self.emit)
         self.sched = Scheduler(self.mixer, args.delay, emit=self._on_sched)
+        self.voice = EdgeVoice(settings.tts_voice, self.mixer.rate, size=WORKERS, emit=self.emit)
         self.watchdog = Watchdog(self.mixer, self.sched, emit=self.emit)
         self.mic = MicCapture(settings.mic_name, emit=self.emit)
         self.q_pcm: asyncio.Queue = asyncio.Queue(maxsize=250)
         self.q_commits: asyncio.Queue[Commit] = asyncio.Queue()
         self.q_translated: asyncio.Queue[Commit] = asyncio.Queue()
-        self.history: list[tuple[str, str]] = []
+        self.translated: dict[int, tuple[str, str]] = {}
         self.timings: dict[int, dict] = {}
         self.lags: list[float] = []
         self.cable_warning = ""
@@ -95,7 +102,7 @@ class Outgoing:
     def setup(self, key: str, spark: Spark) -> None:
         self.asr = MetaRealtimeAsr(Channel.OUT, key, mode="ENDPOINTING", emit=self.emit)
         self.spark = spark
-        self.policy = Consecutive(Channel.OUT, self.asr.clock.to_local, emit=self.emit)
+        self.policy = POLICIES[self.args.mode](Channel.OUT, self.asr.clock.to_local, emit=self.emit)
 
     def start_audio(self) -> None:
         if not self.args.wav_out:
@@ -111,6 +118,7 @@ class Outgoing:
                 self.mic.add_consumer(QueueFeeder(self.loop, self.q_pcm, To16k(self.mic.rate)))
             print(f"mic   {self.mic.device.name} [{self.mic.device.hostapi}] {self.mic.rate} Hz", file=sys.stderr)
         self.mixer.start()
+        self.loop.create_task(self.voice.start())
         print(f"cable {self.mixer.device.name} [{self.mixer.device.hostapi}] {self.mixer.rate} Hz "
               f"{self.mixer.channels} ch, state {self.mixer.state.value}", file=sys.stderr)
         self.check_cable_level()
@@ -135,6 +143,10 @@ class Outgoing:
 
     def idle(self) -> bool:
         return self.sched.in_flight() == 0 and not self.mixer.busy()
+
+    def recent(self) -> list[tuple[str, str]]:
+        """Last clauses in spoken order: with several workers they finish out of order."""
+        return [self.translated[s] for s in sorted(self.translated)[-4:]]
 
     # --- tasks ---------------------------------------------------------------------
 
@@ -169,14 +181,15 @@ class Outgoing:
                 await self.q_translated.put(c)
                 continue
             try:
-                r = await asyncio.wait_for(self.spark.translate(c.text_src, history=self.history[-4:]), MT_TIMEOUT_S)
+                r = await asyncio.wait_for(self.spark.translate(c.text_src, prefix=c.prefix_src, history=self.recent(),
+                                                                fragment=self.args.mode == "incremental"), MT_TIMEOUT_S)
             except MT_ERRORS as exc:
                 self.sched.tombstone(c.seq, f"mt:{type(exc).__name__}")
                 self.emit("mt", channel="out", seq=c.seq, utterance_id=c.utterance_id, error=f"{type(exc).__name__}: {exc}"[:300])
                 print(f"\r[mt] dropped seq {c.seq}: {type(exc).__name__}".ljust(100))
                 continue
             c.text_tgt, c.t_mt, c.mt_calls = r.translation, r.t_end, 1
-            self.history.append((c.text_src, c.text_tgt))
+            self.translated[c.seq] = (c.text_src, c.text_tgt)
             self.timings[c.seq].update(t_mt=r.t_end, mt_s=r.t_end - r.t_start, text_tgt=c.text_tgt)
             self.emit("mt", channel="out", seq=c.seq, utterance_id=c.utterance_id, t_mt=r.t_end, mt_s=r.t_end - r.t_start,
                       text_tgt=c.text_tgt, mt_calls_per_commit=1, reasoning_tokens=r.reasoning_tokens,
@@ -194,9 +207,11 @@ class Outgoing:
             def on_hedge() -> None:
                 self.emit("tts", channel="out", seq=c.seq, utterance_id=c.utterance_id, hedged=True)
 
+            catch_up = self.sched.backlog_s(now()) > CATCH_UP_BACKLOG_S
+            src_s = None if c.t_src_end is None else c.t_src_end - c.t_src_start
+            rate_pct = max(isochrony_pct(c.text_tgt, src_s), CATCH_UP_PCT if catch_up else 0)
             try:
-                r = await asyncio.wait_for(synthesize_hedged(c.text_tgt, self.settings.tts_voice, self.mixer.rate, on_hedge),
-                                           TTS_TIMEOUT_S)
+                r = await asyncio.wait_for(self.voice.say(c.text_tgt, rate_pct=rate_pct, on_hedge=on_hedge), TTS_TIMEOUT_S)
             except Exception as exc:                 # network, decode, timeout: never stall the queue
                 self.sched.tombstone(c.seq, f"tts:{type(exc).__name__}")
                 self.emit("tts", channel="out", seq=c.seq, utterance_id=c.utterance_id, error=f"{type(exc).__name__}: {exc}"[:300])
@@ -209,12 +224,14 @@ class Outgoing:
                 pcm=r.pcm, sample_rate=r.sample_rate, duration_s=r.duration_s,
                 t_src_start=c.t_src_start, t_src_end=c.t_src_end,
                 deadline=self.sched.deadline_for(c.t_src_start), t_tts_first=r.t_first, t_tts_end=r.t_ready,
+                stretch_ratio=100 / (100 + rate_pct),
             )
             self.timings[c.seq].update(t_tts_first=r.t_first, t_tts_end=r.t_ready, tts_ttfb_s=r.t_first - r.t_request,
                                        duration_s=r.duration_s)
             self.emit("tts", channel="out", seq=c.seq, utterance_id=c.utterance_id, t_tts_first=r.t_first, t_tts_end=r.t_ready,
                       ttfb_s=r.t_first - r.t_request, synth_s=r.t_end - r.t_request, duration_s=r.duration_s,
-                      trimmed_lead_s=r.trimmed_lead_s, trimmed_tail_s=r.trimmed_tail_s)
+                      trimmed_lead_s=r.trimmed_lead_s, trimmed_tail_s=r.trimmed_tail_s, catch_up=catch_up,
+                      rate_pct=rate_pct, stretch_ratio=chunk.stretch_ratio, backlog_s=self.sched.backlog_s(now()))
             self.sched.submit(chunk)
 
     def fallback(self, t: float) -> None:
@@ -279,13 +296,16 @@ class Outgoing:
         self.stop.set()
 
     def tasks(self) -> dict:
-        jobs = {"out.sched": self.sched.run(), "out.mt": self.mt_worker(), "out.tts": self.tts_worker(),
-                "out.controller": self.controller()}
+        jobs = {"out.sched": self.sched.run(), "out.controller": self.controller()}
+        for i in range(WORKERS):                     # a clause never queues behind the previous one; seq keeps the order
+            jobs[f"out.mt{i}"] = self.mt_worker()
+            jobs[f"out.tts{i}"] = self.tts_worker()
         if self.asr is not None:
             jobs["out.asr"] = self.asr.run(self.q_pcm, self.on_asr_event, self.stop)
         return jobs
 
-    def close(self) -> None:
+    async def close(self) -> None:
+        await self.voice.close()
         self.mixer.stop()
         self.mic.stop()
 
@@ -294,7 +314,8 @@ class Outgoing:
             if r["t_src_source"] != "notice":        # no ASR or Spark behind it: it would flatter the latency
                 self.emit("commit", phase="report", channel="out", **r)
         self.emit("run", seq_skipped=self.sched.seq_skipped, cable_gaps=self.mixer.cable_gaps,
-                  watchdog_trips=self.watchdog.trips)
+                  watchdog_trips=self.watchdog.trips, mode=self.args.mode, tts_reconnects=self.voice.reconnects,
+                  corrections_blocked=self.policy.corrections_blocked if self.policy is not None else 0)
 
 
 class Incoming:
@@ -308,6 +329,7 @@ class Incoming:
         self.q_commits: asyncio.Queue[Commit] = asyncio.Queue()
         self.history: list[tuple[str, str]] = []
         self.rows: dict[int, dict] = {}
+        self.turn_text = ""                          # the subtitle grows clause by clause within a turn
         self.pending = 0
         self.loopback: LoopbackCapture | None = None
         self.asr: MetaRealtimeAsr | None = None
@@ -317,7 +339,7 @@ class Incoming:
     def setup(self, key: str, spark: Spark) -> None:
         self.asr = MetaRealtimeAsr(Channel.IN, key, mode="ENDPOINTING", emit=self.emit)
         self.spark = spark
-        self.policy = Consecutive(Channel.IN, self.asr.clock.to_local, emit=self.emit)
+        self.policy = POLICIES[self.args.mode](Channel.IN, self.asr.clock.to_local, emit=self.emit)
 
     def start_audio(self) -> None:
         if self.args.wav_in:
@@ -346,15 +368,17 @@ class Incoming:
             c = await self.q_commits.get()
             row = self.rows[c.seq]
             try:
-                r = await asyncio.wait_for(self.spark.translate(c.text_src, src="en", tgt="es", history=self.history[-4:]),
-                                           MT_TIMEOUT_S)
+                r = await asyncio.wait_for(self.spark.translate(c.text_src, src="en", tgt="es", prefix=c.prefix_src,
+                                                                history=self.history[-4:],
+                                                                fragment=self.args.mode == "incremental"), MT_TIMEOUT_S)
             except MT_ERRORS as exc:
                 self.ui.their_failed(c.text_src)
                 self.emit("mt", channel="in", seq=c.seq, utterance_id=c.utterance_id, error=f"{type(exc).__name__}: {exc}"[:300])
                 self.pending -= 1
                 continue
             self.history.append((c.text_src, r.translation))
-            self.ui.their_translation(r.translation)
+            self.turn_text = r.translation if c.commit_id == 0 else f"{self.turn_text} {r.translation}"
+            self.ui.their_translation(self.turn_text)
             print(f"\r[sub] {r.translation}".ljust(100))
             row.update(t_mt=r.t_end, t_shown=now(), mt_s=r.t_end - r.t_start, text_tgt=r.translation)
             self.emit("mt", channel="in", seq=c.seq, utterance_id=c.utterance_id, t_mt=r.t_end, mt_s=r.t_end - r.t_start,
@@ -364,7 +388,7 @@ class Incoming:
     def tasks(self) -> dict:
         return {"in.mt": self.mt_worker(), "in.asr": self.asr.run(self.q_pcm, self.on_asr_event, self.stop)}
 
-    def close(self) -> None:
+    async def close(self) -> None:
         if self.loopback is not None:
             self.loopback.stop()
 
@@ -501,7 +525,7 @@ class App:
                 t.cancel()
             await asyncio.gather(*self.tasks, return_exceptions=True)
             for c in self.chains:
-                c.close()
+                await c.close()
             self.guard.run()
 
     def report(self) -> None:
@@ -538,6 +562,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     ap.add_argument("--record-cable", action="store_true", help="record CABLE Output to logs/")
     ap.add_argument("--seconds", type=float, default=None)
     ap.add_argument("--delay", type=float, default=0.0, help="D in seconds (0 this week until piece 10)")
+    ap.add_argument("--mode", choices=sorted(POLICIES), default=config.load().mode,
+                    help="incremental: clause by clause; consecutive: whole turns")
     ap.add_argument("--out-only", action="store_true", help="no incoming chain")
     ap.add_argument("--in-only", action="store_true", help="no outgoing chain")
     ap.add_argument("--no-overlay", action="store_true", help="console only")

@@ -27,6 +27,7 @@ class Settings:
     voice_under_db: float
     av_offset_ms: float
     overlay_hide_from_capture: bool
+    mode: str
 
 
 def load() -> Settings:
@@ -39,6 +40,7 @@ def load() -> Settings:
         voice_under_db=float(os.environ.get("RTT_VOICE_UNDER_DB", "-20")),
         av_offset_ms=float(os.environ.get("RTT_AV_OFFSET_MS", "0")),
         overlay_hide_from_capture=os.environ.get("RTT_OVERLAY_HIDE_FROM_CAPTURE", "0") == "1",
+        mode=os.environ.get("RTT_MODE", "incremental"),
     )
 
 

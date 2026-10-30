@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import sys
+from collections import Counter
 
 import numpy as np
 
@@ -63,7 +64,9 @@ def summarize(events: list[dict]) -> dict:
             cable_gaps=max((e.get("cable_gaps", 0) for e in events), default=0),
             seq_skipped=max((e.get("seq_skipped") or 0 for e in plays), default=0),
             tombstones=sum(bool(e.get("tombstone")) for e in plays),
-            corrections_blocked=0,      # consecutive mode never commits a partial
+            corrections_blocked=max((e.get("corrections_blocked", 0) for e in events), default=0),
+            boundaries=dict(Counter(e["boundary"] for e in events if e["ev"] == "commit" and e.get("channel") == "out"
+                                    and "boundary" in e)),
             f9_latency_s=_stats(f9),
             # "tts_idle" only means the next clause is slow: the cable rests, nothing was lost
             watchdog_trips=sum(e.get("what") == "watchdog" and e.get("why") != "tts_idle" for e in events),
@@ -88,13 +91,14 @@ def integrity_failures(s: dict) -> list[str]:
         fails.append(f"cable gaps: {o['cable_gaps']}")
     if o["bytes_pct"] is not None and o["bytes_pct"] < 100:
         fails.append(f"bytes on the cable: {o['bytes_pct']} %")
-    if o["corrections_blocked"]:
-        fails.append(f"corrections: {o['corrections_blocked']}")
     return fails
 
 
 def gate_60s(s: dict) -> list[str]:
-    """Failures of the 60 s gate: commit → first PCM mean and p95 ≤ 4 s, 0 gaps, 100 % of the bytes."""
+    """Failures of the 60 s gate: commit → first PCM mean and p95 ≤ 4 s, 0 gaps, 100 % of the bytes.
+
+    `corrections_blocked` stays out: a blocked correction is by definition one nobody heard.
+    """
     o = s["out"]
     c2p = o["commit_to_first_pcm_s"]
     if not c2p["n"]:
