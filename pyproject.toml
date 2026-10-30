@@ -19,6 +19,8 @@ dependencies = [
     "pyaudiowpatch==0.2.12.9",
     "pycaw==20260927",
     "comtypes==1.4.17",
+    "pyside6-essentials==6.12.0",
+    "qasync==0.28.0",
 ]
 
 [dependency-groups]

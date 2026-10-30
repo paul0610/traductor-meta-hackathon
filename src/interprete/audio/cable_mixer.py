@@ -1,10 +1,15 @@
 """Outgoing mixer: writes the virtual microphone (`CABLE Input`) from one output callback (SPEC §7.6).
 
-States this week: OFF, PASSTHROUGH (live voice), TTS (only translated voice),
-MUTE. DUB (piece 10) plugs in here later. The TTS takes the cable at the exact
-sample its first chunk starts; live voice is cut there, not before. Going back
-to PASSTHROUGH is decided outside the callback (`release_if_idle`), because it
-needs to know whether the scheduler still has work in flight.
+States this week: OFF, SILENT (the rest state: the other side only ever hears
+English, so raw Spanish stays off the cable), TTS (translated voice), PASSTHROUGH
+(live voice, only by F9 or as the fallback while the ASR is down), MUTE. DUB
+(piece 10) plugs in here later. The TTS takes the cable at the exact sample its
+first chunk starts. Going back to rest is decided outside the callback
+(`release_if_idle`), because it needs to know whether the scheduler still has
+work in flight.
+
+The endpoint is opened with its real channel count (VB-CABLE: 2) and the mono
+mix goes to every channel, so nothing depends on how Windows would upmix mono.
 
 The callback never blocks: chunks arrive through a deque (append/popleft are
 atomic), control through plain attribute writes.
@@ -25,12 +30,13 @@ from ..contracts import PcmChunk
 from . import devices
 from .ring import Ring
 
-RELEASE_AFTER_S = 0.30          # TTS → PASSTHROUGH once idle this long with nothing in flight
+RELEASE_AFTER_S = 0.30          # TTS → rest once idle this long with nothing in flight
 PASSTHROUGH_MAX_S = 0.06        # bound live-voice latency: drop older mic audio beyond this
 
 
 class State(str, Enum):
     OFF = "OFF"
+    SILENT = "SILENT"
     PASSTHROUGH = "PASSTHROUGH"
     TTS = "TTS"
     MUTE = "MUTE"
@@ -46,36 +52,52 @@ class _Item:
 
 
 class CableMixer:
-    def __init__(self, name_sub: str = "CABLE Input", *, mic: Ring | None = None,
+    def __init__(self, name_sub: str = "CABLE Input", *, mic: Ring | None = None, rest: State = State.SILENT,
                  block_ms: int = 10, emit: Callable[..., None] | None = None) -> None:
         self.device = devices.find(name_sub, "output")
         self.rate = self.device.default_samplerate       # the endpoint's real rate, never assumed
+        self.channels = min(2, self.device.max_output_channels)
         self.block = int(self.rate * block_ms / 1000)
         self.mic = mic
+        self.rest = rest
+        self.latched = False                             # F9: live voice until the next F9
         self._emit = emit or (lambda ev, **f: None)
         self._items: deque[_Item] = deque()
         self._cur: _Item | None = None
         self._clear_req = False
         self._state = State.OFF
-        self._before_mute = State.PASSTHROUGH
+        self._before_mute = rest
         self._last_end = 0.0
         self._kill_t: float | None = None
         self._stream: sd.OutputStream | None = None
         self.tts_idle_since: float | None = None
+        self.t_callback = 0.0                            # heartbeat for the watchdog
         self.cable_gaps = 0
         self.passthrough_underruns = 0
         self.frames_out = 0
 
     # --- lifecycle -------------------------------------------------------------------
 
-    def start(self) -> None:
+    def _open(self) -> None:
         self._stream = sd.OutputStream(
-            device=self.device.index, samplerate=self.rate, channels=1, dtype="float32",
+            device=self.device.index, samplerate=self.rate, channels=self.channels, dtype="float32",
             blocksize=self.block, latency="low",
             extra_settings=devices.stream_extra(self.device), callback=self._callback,
         )
         self._stream.start()
-        self._set_state(State.PASSTHROUGH, "start")
+        self.t_callback = now()
+
+    def start(self) -> None:
+        self._open()
+        self._set_state(self.rest, "start")
+
+    def reopen(self) -> None:
+        """Watchdog: the callback stopped firing, replace the stream; the state is kept."""
+        stream, self._stream = self._stream, None
+        if stream is not None:
+            stream.abort()
+            stream.close()
+        self._open()
 
     def stop(self) -> None:
         if self._stream is not None:
@@ -109,8 +131,27 @@ class CableMixer:
         """F9: drop all TTS and latch live voice; effective on the next callback (≤ one block)."""
         self._kill_t = now() if t_key is None else t_key
         self._clear_req = True
+        self.latched = True
         if self._state != State.OFF:
             self._set_state(State.PASSTHROUGH, "kill")
+
+    def unlatch(self) -> None:
+        """F9 again: back to interpreting without restarting the call."""
+        self.latched = False
+        if self._state == State.PASSTHROUGH:
+            self._set_state(self.rest, "unlatch")
+
+    def set_rest(self, rest: State) -> None:
+        """Change the rest state; takes effect now if the mixer is resting (ASR down → live voice)."""
+        before, self.rest = self.rest, rest
+        if self._state == before and not self.latched:
+            self._set_state(rest, "rest")
+
+    def release(self, why: str) -> None:
+        """Back to rest right now, buffers emptied (watchdog); a later chunk may retake the cable."""
+        self._clear_req = True
+        if self._state == State.TTS:
+            self._set_state(self.rest, why)
 
     def toggle_mute(self) -> None:
         if self._state == State.MUTE:
@@ -123,11 +164,11 @@ class CableMixer:
         return self._cur is not None or bool(self._items)
 
     def release_if_idle(self, in_flight: int, t: float | None = None) -> bool:
-        """TTS → PASSTHROUGH when nothing plays, nothing is queued or in flight, for RELEASE_AFTER_S."""
+        """TTS → rest when nothing plays, nothing is queued or in flight, for RELEASE_AFTER_S."""
         t = now() if t is None else t
         if (self._state == State.TTS and in_flight == 0 and not self.busy()
                 and self.tts_idle_since is not None and t - self.tts_idle_since >= RELEASE_AFTER_S):
-            self._set_state(State.PASSTHROUGH, "idle")
+            self._set_state(self.rest, "idle")
             return True
         return False
 
@@ -150,17 +191,19 @@ class CableMixer:
 
     def _callback(self, outdata, frames, time_info, status) -> None:
         t_cb = now()
+        self.t_callback = t_cb
         if status.output_underflow:
             self.cable_gaps += 1
-        if self._clear_req:
+        # the latch also covers a chunk handed over between the F9 key and the scheduler's flush
+        if self._clear_req or (self.latched and (self._items or self._cur)):
             self._clear_req = False
             self._items.clear()
             self._cur = None
             self.tts_idle_since = t_cb
         mic = self._read_mic(frames)          # always drained, so live voice stays current
         state0 = self._state
+        outdata.fill(0.0)
         out = outdata[:, 0]
-        out.fill(0.0)
         if state0 in (State.OFF, State.MUTE):
             self.frames_out += frames
             return
@@ -184,7 +227,7 @@ class CableMixer:
                 self._cur = head
                 tts_from = min(tts_from, off)
                 pos = off
-                if self._state == State.PASSTHROUGH:
+                if self._state in (State.SILENT, State.PASSTHROUGH):
                     self._set_state(State.TTS, "first_pcm")
                 self._emit("play", phase="start", seq=head.chunk.seq, start_at=head.start_at,
                            actual_start=head.actual_start)
@@ -211,4 +254,6 @@ class CableMixer:
             # F9 budget is < 200 ms from key to the first live-voice block written
             self._emit("state", what="f9_effective", f9_latency_s=t_cb - self._kill_t)
             self._kill_t = None
+        if self.channels > 1:
+            outdata[:, 1] = out
         self.frames_out += frames

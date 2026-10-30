@@ -40,10 +40,11 @@ Every PCM chunk carries `t_src_start` (when its clause started being spoken) and
 
 ## 3. Operational safety
 
-- Outgoing mixer states: `PASSTHROUGH` (raw voice), `TTS`, `MUTE`, plus `DUB` for piece 10 (state machine in §7.6).
-- The TTS takes over the cable only when its first PCM arrives. Errors, timeouts or cancellation clear the buffers and return to passthrough.
+- **The receiver only hears English.** That is why the output is a virtual microphone: at rest the cable carries silence, and raw Spanish reaches it only when I choose (F9) or while the ASR is down.
+- Outgoing mixer states: `SILENT` (rest), `TTS`, `PASSTHROUGH` (raw voice), `MUTE`, plus `DUB` for piece 10 (state machine in §7.6).
+- The TTS takes over the cable only when its first PCM arrives. Errors, timeouts or cancellation clear the buffers and return to rest.
 - **Watchdog of 2 s** on the mixer callback and on scheduler progress.
-- **Kill switch F9 in < 200 ms**, latching passthrough.
+- **Kill switch F9 in < 200 ms**, latching passthrough until the next F9 (restarting the app mid-call would drop the microphone).
 - **F10 restores the physical microphone as the Windows default in < 1 s** via the Windows Core Audio API (`pycaw`/`comtypes`). Not SoundVolumeView (its licence forbids commercial redistribution).
 - On exit — including exit by exception — everything is restored (`finally` + `atexit` + signal handler).
 
@@ -173,16 +174,21 @@ Why `seq` and not deadline order: TTS jobs can finish out of order, and emitted 
 
 | From → to | Trigger | What the cable carries |
 |---|---|---|
-| `OFF → PASSTHROUGH` | F7 / "Ready": cable open, mic capturing, ASR connected | live voice, 0 dB |
-| `PASSTHROUGH → TTS` (`D = 0`) | the scheduler hands over the first `PcmChunk`; live voice is cut at that instant, not before | TTS only |
-| `TTS → PASSTHROUGH` | heap empty and nothing in flight 300 ms after the last chunk ended; or error, timeout, watchdog, F9 (buffers cleared) | live voice |
-| `PASSTHROUGH → DUB` (`D > 0`) | dubbing enabled: the voice ring starts filling; the first D s are silent while the virtual camera shows the title card | original voice delayed D at −20 dB + TTS at its deadlines; **never drops back to `PASSTHROUGH` between clauses** (live voice would run ahead of its own video) |
+| `OFF → SILENT` | launch ("Ready"): cable open, mic capturing, ASR connecting | silence |
+| `SILENT → TTS` (`D = 0`) | the scheduler hands over the first `PcmChunk` | TTS only |
+| `TTS → SILENT` | heap empty and nothing in flight 300 ms after the last chunk ended; or error, timeout, watchdog (buffers cleared) | silence |
+| `SILENT ↔ PASSTHROUGH` | the ASR drops and comes back: while nothing can be translated, the other side at least hears me | live voice |
+| `any → PASSTHROUGH` | F9 (buffers cleared, latched; no chunk takes the cable while latched) | live voice |
+| `PASSTHROUGH → SILENT` | F9 again | silence |
+| `SILENT → DUB` (`D > 0`) | dubbing enabled: the voice ring starts filling; the first D s are silent while the virtual camera shows the title card | original voice delayed D at −20 dB + TTS at its deadlines; **never drops back to `SILENT` between clauses** |
 | `DUB → PASSTHROUGH` | F9, error or watchdog: audio and video jump to live **together** (one cut, never desync) | live voice |
 | `any → MUTE` | F8 | silence |
 | `MUTE → previous` | F8 again | whatever was there |
 | `any → OFF` | normal close or exception | cable closed; F10 restores the default mic, also without closing |
 
-Yielding the turn does not change state: in `TTS` the heap empties and after 300 ms it returns to `PASSTHROUGH`; in `DUB` it stays in `DUB` (the remote sees up to D seconds of silent lips: accepted cost, never a jump). Measured: F9 < 200 ms from key to first live-voice block; F10 < 1 s; watchdog 2 s. Every transition is a `state` event in the JSONL.
+Yielding the turn does not change state: in `TTS` the heap empties and after 300 ms it returns to `SILENT`; in `DUB` it stays in `DUB` (the remote sees up to D seconds of silent lips: accepted cost, never a jump). Measured: F9 < 200 ms from key to first live-voice block; F10 < 1 s; watchdog 2 s. Every transition is a `state` event in the JSONL.
+
+The watchdog does not cancel a clause that is merely slow: if the next clause is still in Spark or TTS more than 2 s after the last audio, the cable goes back to rest and the clause retakes it when ready. Only a stalled callback or a scheduler that stopped stepping clears the work in flight.
 
 ---
 
