@@ -9,20 +9,16 @@ the 16 kHz byte rate, and the passthrough latency mic → CABLE Output.
 from __future__ import annotations
 
 import argparse
-import sys
 import time
-from pathlib import Path
 
 import numpy as np
 
-sys.path.insert(0, str(Path(__file__).parent))
-from test_cable import Recorder, find_offset  # noqa: E402
-
-from interprete import config  # noqa: E402
-from interprete.audio.cable_mixer import CableMixer  # noqa: E402
-from interprete.audio.capture import MicCapture, To16k  # noqa: E402
-from interprete.audio.ring import Ring  # noqa: E402
-from interprete.metrics.jsonl import Metrics  # noqa: E402
+from interprete import config
+from interprete.audio.cable_mixer import CableMixer
+from interprete.audio.capture import MicCapture, To16k
+from interprete.audio.recorder import Recorder, find_offset
+from interprete.audio.ring import Ring
+from interprete.metrics.jsonl import Metrics
 
 
 def main() -> None:

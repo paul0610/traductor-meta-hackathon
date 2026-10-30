@@ -95,6 +95,9 @@ class Scheduler:
         self._cancelled.add(utterance_id)
         self._wake.set()
 
+    def is_cancelled(self, utterance_id: str) -> bool:
+        return utterance_id in self._cancelled
+
     def yield_current(self) -> str | None:
         """Turn yield: the chunk already handed to the mixer finishes, the rest of its utterance is dropped."""
         utt = self._current_utterance

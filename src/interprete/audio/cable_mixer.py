@@ -59,6 +59,7 @@ class CableMixer:
         self._state = State.OFF
         self._before_mute = State.PASSTHROUGH
         self._last_end = 0.0
+        self._kill_t: float | None = None
         self._stream: sd.OutputStream | None = None
         self.tts_idle_since: float | None = None
         self.cable_gaps = 0
@@ -104,8 +105,9 @@ class CableMixer:
 
     # --- control ---------------------------------------------------------------------
 
-    def kill(self) -> None:
+    def kill(self, t_key: float | None = None) -> None:
         """F9: drop all TTS and latch live voice; effective on the next callback (≤ one block)."""
+        self._kill_t = now() if t_key is None else t_key
         self._clear_req = True
         if self._state != State.OFF:
             self._set_state(State.PASSTHROUGH, "kill")
@@ -205,4 +207,8 @@ class CableMixer:
 
         if state0 == State.PASSTHROUGH and mic is not None:
             out[:tts_from] = mic[:tts_from]
+        if self._kill_t is not None and state0 == State.PASSTHROUGH:
+            # F9 budget is < 200 ms from key to the first live-voice block written
+            self._emit("state", what="f9_effective", f9_latency_s=t_cb - self._kill_t)
+            self._kill_t = None
         self.frames_out += frames
