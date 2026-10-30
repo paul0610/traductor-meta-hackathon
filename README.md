@@ -30,7 +30,7 @@ IN:  system loopback ─► Muse Voice Transcribe (en) ─► Muse Spark (en→e
 Design, contracts, clock model and safety rules: [`docs/SPEC.md`](docs/SPEC.md).
 
 Honest notes:
-- **There is no Meta text-to-speech model** (checked against the docs, the live model list and the cookbook on Oct 30). The English voice is Microsoft Edge TTS. Meta models do the listening (ASR, including turn and timing events) and the translating.
+- **Meta's Model API has no text-to-speech model** (checked against the docs, the live model list and the cookbook on Oct 30). Meta's open-weight MMS-TTS exists outside the API under a non-commercial license and is not used here. The English voice is Microsoft Edge TTS. Meta models do the listening (ASR, including turn and timing events) and the translating.
 - Requires Windows 11, [VB-CABLE](https://vb-audio.com/Cable/) and headphones (with speakers the mic would re-translate the other side's voice).
 
 ## Run it

@@ -1,6 +1,6 @@
 """Edge TTS → PCM16 mono at the cable's rate, leading/trailing silence trimmed.
 
-There is no Meta TTS model; the outgoing voice is Microsoft Edge TTS. Edge pads
+The Meta Model API has no TTS; the outgoing voice is Microsoft Edge TTS. Edge pads
 every request with silence, so only PCM silence is trimmed (conservative
 threshold, 60 ms margin): speech is never cut.
 """
