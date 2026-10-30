@@ -282,11 +282,13 @@ dependencies = [
     { name = "keyboard" },
     { name = "numpy" },
     { name = "openai" },
+    { name = "opencv-python" },
     { name = "pyaudiowpatch" },
     { name = "pycaw" },
     { name = "pydantic" },
     { name = "pyside6-essentials" },
     { name = "python-dotenv" },
+    { name = "pyvirtualcam" },
     { name = "qasync" },
     { name = "sounddevice" },
     { name = "soundfile" },
@@ -307,11 +309,13 @@ requires-dist = [
     { name = "keyboard", specifier = "==0.13.5" },
     { name = "numpy", specifier = "==2.5.4" },
     { name = "openai", specifier = "==3.37.0" },
+    { name = "opencv-python", specifier = "==4.14.0.94" },
     { name = "pyaudiowpatch", specifier = "==0.2.12.9" },
     { name = "pycaw", specifier = "==20260927" },
     { name = "pydantic", specifier = "==2.14.1" },
     { name = "pyside6-essentials", specifier = "==6.12.0" },
     { name = "python-dotenv", specifier = "==1.2.4" },
+    { name = "pyvirtualcam", specifier = "==0.15.0" },
     { name = "qasync", specifier = "==0.28.0" },
     { name = "sounddevice", specifier = "==0.5.6" },
     { name = "soundfile", specifier = "==0.14.0" },
@@ -422,6 +426,25 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/0a/66/d4c48dc690e36b297c178636d8434050ac92df9db8a4c89d9bd451cccc95/openai-3.37.0.tar.gz", hash = "sha256:670bd6f699000d43a2073bcf94374a55bb133bfe5de0d084d47eb9bb9f6a8e5d", size = 2325534, upload-time = "2026-10-22T20:04:39.602Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/56/73/c605f0cee1882e453a4b7fc2f17f4a42a7d4c1ed2304aff4b163ffade819/openai-3.37.0-py3-none-any.whl", hash = "sha256:d9f5b000f52397a7f9f946012744c5bc4c962eed3c100385252464c273a63e57", size = 2303939, upload-time = "2026-10-22T20:04:37.707Z" },
+]
+
+[[package]]
+name = "opencv-python"
+version = "4.14.0.94"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/ed/e8/c2959c0f969ea4ae96b55ad10c108c0410de4e8b3550d9941a4cfdd52703/opencv_python-4.14.0.94.tar.gz", hash = "sha256:afadc76a38a07713a4c2b4702da917cf0ed489be57e2a40a34e670189731de7d", size = 96400225, upload-time = "2026-07-28T19:23:09.546Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/19/91/e4fd7c2b64fda9792bc1f5dcb5a6cbdb54d50c3a2fa9dccc3943fd47afcf/opencv_python-4.14.0.94-cp37-abi3-macosx_13_0_arm64.whl", hash = "sha256:04456937c8f12ca64ff94df8bfd813ca98f5c9767da792948969a759c716ebe2", size = 46491087, upload-time = "2026-07-29T03:52:01.842Z" },
+    { url = "https://files.pythonhosted.org/packages/f4/a7/8895ca8731f741925acf238f87ccb21fa8f47378d5291792e932b9a4ab71/opencv_python-4.14.0.94-cp37-abi3-macosx_14_0_x86_64.whl", hash = "sha256:6a49842cc0ba9f43e35a289e61c0e15a1f8be8df60145ee5c7d42593b0d4f4b8", size = 33084035, upload-time = "2026-07-28T20:05:52.633Z" },
+    { url = "https://files.pythonhosted.org/packages/84/ec/5777752567986b99222d52e22306e9616829480cc2d48ab241daa9d7e9ef/opencv_python-4.14.0.94-cp37-abi3-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:3198fcbcb8f98fd68063bf2c75d129b0f50d46e555a4e47578a6eb086eb38e1f", size = 49513397, upload-time = "2026-07-28T19:17:28.309Z" },
+    { url = "https://files.pythonhosted.org/packages/13/09/c05887c383caa9080ef612febffd08c5da1c283418687a3bea6ef7fb6faa/opencv_python-4.14.0.94-cp37-abi3-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:4ae0b5a2acbcfb9813035f1644cfba751edd02797fac994e32180813eeef8420", size = 72049625, upload-time = "2026-07-28T19:18:11.767Z" },
+    { url = "https://files.pythonhosted.org/packages/ed/0b/df7ac73ed46258d569e4334c03b42515fbc2f901d40831e64414ac0da66a/opencv_python-4.14.0.94-cp37-abi3-manylinux_2_28_aarch64.whl", hash = "sha256:add600736d0d65a39e797a9ceeb494f3cdc5736d4bd96b4f89d65a8c92451528", size = 53432460, upload-time = "2026-07-28T19:18:43.878Z" },
+    { url = "https://files.pythonhosted.org/packages/8f/96/97f176047c56726a61ddd02300b45b35d1451278c6182688a1fb27035e81/opencv_python-4.14.0.94-cp37-abi3-manylinux_2_28_x86_64.whl", hash = "sha256:726a2b40c1120a0bbd0116394c6a5b2aa0a4dfa4e609a81ee10d12c6a34cd372", size = 77393698, upload-time = "2026-07-28T19:19:14.745Z" },
+    { url = "https://files.pythonhosted.org/packages/8b/2c/42491165dea74fcefa9a438ccf9ab6c7f3a52d595688ac90e87c4c1e9774/opencv_python-4.14.0.94-cp37-abi3-win32.whl", hash = "sha256:549c2401f8654708c702bdf0e26d45816b9c411369a0efa41907ec2b4ec0e707", size = 33162505, upload-time = "2026-07-28T18:32:23.488Z" },
+    { url = "https://files.pythonhosted.org/packages/08/f0/ebf59732b54b4dd8a9e23f3b453ad73e11ec2230faf25ff4b1befa191ce0/opencv_python-4.14.0.94-cp37-abi3-win_amd64.whl", hash = "sha256:ace53616cdffc9643e17e075397b493e607c427d388c7508798ef7ad2ed577cc", size = 41166165, upload-time = "2026-07-28T18:32:19.031Z" },
 ]
 
 [[package]]
@@ -3030,6 +3053,21 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/74/26/2fbeedb218a787a5eea551c7532cac4e009f83d689dd2faa0d0353473f86/python_dotenv-1.2.4.tar.gz", hash = "sha256:f0d53e69935a851c0dcc78f3ab7aaccd8cabef0b92382b576b824212902873c0", size = 60824, upload-time = "2026-10-01T05:36:10Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/60/d1/38f3a3405989a89ac18390803e70c6ad7c7760da4f9b83cbeca0c44a0c72/python_dotenv-1.2.4-py3-none-any.whl", hash = "sha256:42269a8a5b3fd54ffa6f3d84b18abed50064717576b4ecf03dc4a55d8aa04fdc", size = 23266, upload-time = "2026-10-01T05:36:08.633Z" },
+]
+
+[[package]]
+name = "pyvirtualcam"
+version = "0.15.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy" },
+]
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/13/32/44820c74d22f9d31aa580ebe9e61c805ad67edd3c2a4c234b15bb5f815f8/pyvirtualcam-0.15.0-cp313-cp313-macosx_10_9_x86_64.whl", hash = "sha256:7c57eb80422a0aaec6c22653ac56326890b7ee448993f9181ff4d4dbb53a4e8c", size = 626493, upload-time = "2026-01-24T18:27:32.469Z" },
+    { url = "https://files.pythonhosted.org/packages/af/d4/a6f225fbe5ba5c39284eedd8d049c194ce2f20dac6d431a68b47004dc316/pyvirtualcam-0.15.0-cp313-cp313-macosx_11_0_arm64.whl", hash = "sha256:131bb12dfddc6d3def85d3b82e6c3e0060069de4164fb413b756641c6cd3aa9b", size = 633281, upload-time = "2026-01-24T18:27:34.654Z" },
+    { url = "https://files.pythonhosted.org/packages/c8/75/a45bdf3124569e643335bb9cc66f13c69ee88657f19a6c73b9b3062164db/pyvirtualcam-0.15.0-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:2b51fb6735224cf7861da8afa69bf52746157aba7831a049561d7b9fae77bf83", size = 160562, upload-time = "2026-01-24T18:27:35.95Z" },
+    { url = "https://files.pythonhosted.org/packages/d5/7a/8fd27ec2b6b35e3b1a7f1cd7edeaa5fe7e989f6a81008a1b23b97db38358/pyvirtualcam-0.15.0-cp313-cp313-manylinux_2_26_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:fde3987c2cbb8e1bb7f51ec8e97462321e342f908c12e77538e94a568517afc2", size = 115909, upload-time = "2026-01-24T18:27:37.336Z" },
+    { url = "https://files.pythonhosted.org/packages/4b/be/654a79e8a98b1a32fbc58744d1a97b1efa66b0d91e81cb571d5a92dad741/pyvirtualcam-0.15.0-cp313-cp313-win_amd64.whl", hash = "sha256:5deb5a68a95a9b3a67bac3b0c614ed084421ec22726a811fc6c575864f912be2", size = 189594, upload-time = "2026-01-24T18:27:38.451Z" },
 ]
 
 [[package]]
