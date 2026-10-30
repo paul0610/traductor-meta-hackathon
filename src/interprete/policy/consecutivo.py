@@ -32,6 +32,7 @@ class Consecutive:
         self._turns: dict[str, _Turn] = {}
         self._seq = 0
         self._anon = 0
+        self.corrections_blocked = 0        # nothing is committed before the final text
 
     def take_seq(self) -> int:
         """Next emission slot, also for what does not come from the ASR (the initial notice)."""

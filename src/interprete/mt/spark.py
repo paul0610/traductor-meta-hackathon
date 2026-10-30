@@ -26,6 +26,11 @@ SYSTEM = (
     "Keep the speaker's order where possible, short clauses joined by conjunctions; "
     "do not add explanations. Return only the JSON object."
 )
+FRAGMENT = (
+    " You receive the speech clause by clause as it is said. Translate only the new fragment so it continues "
+    "what you already interpreted: never repeat it, never complete the sentence, and add no final period "
+    "unless the fragment ends with one."
+)
 
 SCHEMA = {
     "type": "json_schema",
@@ -59,8 +64,9 @@ class Spark:
         self.effort = effort
 
     async def translate(self, text: str, *, src: str = "es", tgt: str = "en", prefix: str = "",
-                        history: list[tuple[str, str]] | None = None) -> MtResult:
-        messages = [{"role": "system", "content": SYSTEM.format(src=LANG[src], tgt=LANG[tgt])}]
+                        history: list[tuple[str, str]] | None = None, fragment: bool = False) -> MtResult:
+        system = SYSTEM.format(src=LANG[src], tgt=LANG[tgt]) + (FRAGMENT if fragment else "")
+        messages = [{"role": "system", "content": system}]
         for said, translated in history or []:
             messages.append({"role": "user", "content": said})
             messages.append({"role": "assistant", "content": json.dumps({"translation": translated})})
