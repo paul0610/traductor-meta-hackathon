@@ -53,6 +53,7 @@ class Scheduler:
         self._emit = emit or (lambda ev, **f: None)
         self._next_seq = first_seq
         self._ready: dict[int, PcmChunk] = {}
+        self._t_ready: dict[int, float] = {}            # when each chunk reached this queue (for `overdue`)
         self._tombs: dict[int, str] = {}
         self._expected: dict[int, _Expected] = {}
         self._first_seen_later: dict[int, float] = {}   # seq -> when a later seq was first known (seq never expected)
@@ -73,7 +74,7 @@ class Scheduler:
     def deadline_for(self, t_src_start: float) -> float:
         return t_src_start + self.delay_s
 
-    def submit(self, chunk: PcmChunk) -> None:
+    def submit(self, chunk: PcmChunk, t: float | None = None) -> None:
         if chunk.seq < self._next_seq:
             self._drop(chunk.seq, "late", chunk.utterance_id)
             return
@@ -82,6 +83,7 @@ class Scheduler:
             self.tombstone(chunk.seq, "cancelled")
             return
         self._ready[chunk.seq] = chunk
+        self._t_ready[chunk.seq] = clock_now() if t is None else t
         self._wake.set()
 
     def tombstone(self, seq: int, reason: str = "") -> None:
@@ -123,6 +125,15 @@ class Scheduler:
         """Commits registered but not yet played, tombstoned or skipped."""
         pending = set(self._expected) | set(self._ready) | set(self._tombs)
         return sum(1 for s in pending if s >= self._next_seq)
+
+    def overdue(self, now: float) -> float:
+        """How long the head chunk has sat past its start, unhanded; sustained > 0 means `run()` stopped stepping.
+
+        Counted from its arrival too: with D = 0 every chunk is born past its deadline.
+        """
+        seq = self._next_seq
+        chunk = self._ready.get(seq)
+        return 0.0 if chunk is None else max(0.0, now - max(chunk.deadline, self._prev_end, self._t_ready[seq]))
 
     def backlog_s(self, now: float) -> float:
         """Audio still to play: what the mixer holds plus chunks waiting here."""

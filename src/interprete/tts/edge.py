@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import io
 from dataclasses import dataclass
+from typing import Callable
 
 import edge_tts
 import numpy as np
@@ -17,9 +18,11 @@ import soundfile as sf
 import soxr
 
 from ..clock import now
+from ..hedge import hedged
 
 TRIM_THRESHOLD_DB = -50.0      # peak level per 5 ms window below which audio counts as silence
 TRIM_MARGIN_S = 0.060
+HEDGE_AFTER_S = 2.0
 
 
 @dataclass(slots=True)
@@ -85,3 +88,12 @@ async def synthesize(text: str, voice: str, out_rate: int, *, rate_pct: int = 0)
     pcm = (np.clip(y, -1.0, 1.0) * 32767.0).astype("<i2").tobytes()
     return TtsResult(pcm, out_rate, len(y) / out_rate, t_request, t_first, t_end, now(),
                      decode_s, lead, tail, len(buf))
+
+
+async def synthesize_hedged(text: str, voice: str, out_rate: int, on_hedge: Callable[[], None] | None = None) -> TtsResult:
+    """Edge sometimes stalls 3.4 s and then answers NoAudioReceived, whatever the text (measured 2 clauses in 35).
+
+    A retry after that no longer fits the 4 s budget, so a second request starts
+    at HEDGE_AFTER_S (above the 1.9 s worst healthy synthesis seen) and races the first.
+    """
+    return await hedged(lambda: synthesize(text, voice, out_rate), HEDGE_AFTER_S, on_hedge)
