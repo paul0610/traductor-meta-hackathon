@@ -43,6 +43,8 @@ uv run python scripts/test_cable.py          # Edge TTS -> CABLE Input, verified
 uv run python scripts/asr_live.py            # live mic -> Muse Voice Transcribe, events printed
 ```
 
+Then double-click **`Interprete.bat`** to start the outgoing interpreter and pick `CABLE Output` as the microphone in your call app. F9 cuts back to your own voice, F8 mutes.
+
 Dependencies are pinned exactly and locked (`uv.lock`), resolved with a supply-chain cooldown (`exclude-newer = "2026-10-22"`).
 
 ## Metrics

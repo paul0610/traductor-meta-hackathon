@@ -79,6 +79,7 @@ class MicCapture:
             self._stream.stop()
             self._stream.close()
             self._stream = None
+        self._consumers.clear()     # drops the soxr streams they hold before interpreter shutdown
 
 
 class To16k:
