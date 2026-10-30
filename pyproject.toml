@@ -1,0 +1,36 @@
+[project]
+name = "interprete"
+version = "0.1.0"
+description = "OS-level simultaneous ES<->EN interpreter for video calls, built on Muse Voice Transcribe and Muse Spark"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.13,<3.14"
+dependencies = [
+    "openai==3.37.0",
+    "websockets==17.3",
+    "sounddevice==0.5.6",
+    "numpy==2.5.4",
+    "soxr==1.1.0",
+    "soundfile==0.14.0",
+    "edge-tts==7.3.1",
+    "keyboard==0.13.5",
+    "pydantic==2.14.1",
+    "python-dotenv==1.2.4",
+    "pyaudiowpatch==0.2.12.9",
+    "pycaw==20260927",
+    "comtypes==1.4.17",
+]
+
+[dependency-groups]
+dev = ["pytest==9.1.1"]
+
+[build-system]
+requires = ["uv_build==0.13.5"]
+build-backend = "uv_build"
+
+[tool.uv]
+# Supply-chain cooldown: nothing published after this date is a candidate.
+exclude-newer = "2026-10-22"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

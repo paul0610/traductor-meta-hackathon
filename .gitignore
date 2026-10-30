@@ -1,0 +1,14 @@
+# secrets: never commit the key
+.env
+.env.*
+!.env.example
+
+# runtime output (metrics JSONL, cable recordings)
+logs/
+
+# python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+*.egg-info/

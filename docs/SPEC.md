@@ -1,0 +1,199 @@
+# SPEC — OS-level simultaneous interpreter ES⇄EN on Meta models
+
+Design document for milestone 1 (the only milestone built during the Meta Global AI Developer Hackathon, Oct 26 – Nov 4, 2026). It restates, in my own words, the design knowledge carried over from an earlier prototype (no code is carried over) plus the decisions taken this week. Code follows this document; if they disagree, one of them gets fixed in the same commit.
+
+Status legend: **[verified]** = checked against official Meta docs or measured on this PC, with the date; **[unverified]** = not yet checked in official documentation.
+
+---
+
+## 1. System architecture (Windows 11)
+
+Two independent chains, one per direction. Neither touches the video-call app: it only sees a microphone (the virtual cable) and, later, a camera.
+
+- **Outgoing (me → them).** Physical microphone → streaming ASR in Spanish (Spanglish allowed) → ES→EN translation → English TTS → **virtual microphone**. The TTS is written into VB-CABLE's playback endpoint `CABLE Input`; Meet/Zoom/Teams select `CABLE Output` as their microphone.
+- **Incoming (them → me).** WASAPI **loopback** of the system output (a passive tap; the call app does not notice) → streaming ASR in English → EN→ES translation → subtitles in an overlay. **No Spanish voice in my headphones this week:** the loopback would capture it and feed it back into the incoming ASR. If it is ever added, it must play on a device other than the one being captured.
+- Audio for the ASR is mono PCM16 at 16 kHz (24 kHz is the engine-native rate and also accepted). The incoming chain never changes audio devices.
+
+```
+OUT: mic ─► capture ─► ASR(es) ─► policy ─► Spark(es→en) ─► Edge TTS ─► scheduler ─► mixer ─► CABLE Input ─► (call app mic = CABLE Output)
+IN:  loopback ─► capture ─► ASR(en) ─► policy ─► Spark(en→es) ─► overlay
+```
+
+## 2. Two emission modes, built in this order
+
+1. **Consecutive** (the reliable base, built first). Wait for the ASR's end-of-turn (`speechComplete`), translate the whole utterance, synthesize, play. Expect 4–7 s from end of speech. This is the minimum demo. Back-to-back finals queue behind the previous TTS, so consecutive mode is never presented as a guarantee for long sentences.
+2. **Incremental** (the target). Commit clauses from the *stable prefix* of the cumulative partials: an irreversible commit roughly every 6–10 words, cut at punctuation, conjunctions, pauses or `speechEnd`, or after ~2 s of speech. Translate each delta in order, **pre-synthesize** the next delta while the current one is playing, keep an ordered PCM queue, apply a **1.1× catch-up** when the backlog exceeds 3 s, and drop stale work.
+   - **Hard rule: what is committed is never revised.** Audio that has played cannot be taken back. Late ASR corrections to committed text are counted (`corrections_blocked`) and ignored.
+
+### 2.1 Output queue keyed by source time (foundation for the synchronized dub)
+
+Every PCM chunk carries `t_src_start` (when its clause started being spoken) and is played at `t_src_start + D`, not "as soon as possible". With `D = 0` this degenerates to the classic behaviour (consecutive and incremental as in the prototype). The queue is written this way from day one so that the synchronized dub (piece 10) is a parameter, not a rewrite.
+
+### 2.2 Emission policy v2 (what exists, what is added, what is not done)
+
+- **Base: local agreement LA-2.** A word is stable once it appears in the common prefix of the last two cumulative partials. A clause is cut at punctuation, or at a conjunction with at least 3 new words. This is the policy family that won the IWSLT 2022 SimulST task (CUNI-KIT) and that NAIST has used since. (The cognitive analogue, Marslen-Wilson's cohort model, is the intuition: recognize before the word ends. It is not the technique.)
+- **Addition 1 — speculative translation of the unstable prefix.** While a clause is forming, an async task translates the not-yet-stable prefix with Spark; if LA-2 then confirms the same text, the translation already exists and Spark's 0.5–1 s is saved; if the partial changed, the result is discarded. **At most one speculation in flight per channel**, obsolete ones are cancelled. Cost: 2–3 Spark calls per clause, tracked by `mt_calls_per_commit` and `speculation_hit`.
+- **Addition 2 — "can I translate what I have?" is decided by the same Spark call**, not a separate classifier (an extra call per decision would eat the gain). Structured output `{"translatable": "...", "translation": "...", "remainder": "..."}`: translate what can already be closed, hand back the rest. A commit needs both ASR stability (LA-2) and semantic sufficiency (`translatable`). **Cap:** semantic sufficiency may delay a commit by at most 1 s beyond what LA-2 alone would have committed; past that, translate what there is (`boundary = "time"`).
+- **Addition 3 — "interpretese" instruction.** Spark translates like a simultaneous interpreter, not a document translator: near-monotonic order, short clauses joined by conjunctions, no backward reordering, no sentence openings that require knowing the end; every chunk must be continuable without correcting what was already said (He, Boyd-Graber & Daumé, NAACL 2016).
+- **Not done:** one thread per fragment with independent translations (inconsistent, out of order, and emitted audio cannot be corrected); a separate classifier; more than one speculation in flight; revising commits. Ordering already exists: `utterance_id` + `commit_id` + `seq`. In Python these are `asyncio` tasks, not threads.
+- **When:** LA-2 on Saturday (60 s gate). Speculation, structured sufficiency and interpretese only if the gate passes, as a measured A/B in the JSONL. Expected gain: commit → first PCM from 2–4 s towards 1.5–2.5 s; the clause wait itself does not drop below 1.5–2 s.
+
+## 3. Operational safety
+
+- Outgoing mixer states: `PASSTHROUGH` (raw voice), `TTS`, `MUTE`, plus `DUB` for piece 10 (state machine in §7.6).
+- The TTS takes over the cable only when its first PCM arrives. Errors, timeouts or cancellation clear the buffers and return to passthrough.
+- **Watchdog of 2 s** on the mixer callback and on scheduler progress.
+- **Kill switch F9 in < 200 ms**, latching passthrough.
+- **F10 restores the physical microphone as the Windows default in < 1 s** via the Windows Core Audio API (`pycaw`/`comtypes`). Not SoundVolumeView (its licence forbids commercial redistribution).
+- On exit — including exit by exception — everything is restored (`finally` + `atexit` + signal handler).
+
+## 4. Metrics (one JSONL line per event, in `logs/`)
+
+A single writer task owns the file. Every event is a dict with `ev` ∈ {`run`, `asr`, `commit`, `mt`, `tts`, `play`, `state`, `video`} and the fields below; p50/p95 summaries per path come from `metrics/summary.py`.
+
+| Group | Fields |
+|---|---|
+| Pipeline | `t_audio`, `t_partial_first`, `t_commit`, `t_mt`, `t_tts_first`, `t_tts_end`, `backlog_s`, `commit_id`, `utterance_id`, `corrections_blocked`, `cable_gaps`, `bytes_written`, `bytes_expected` |
+| Piece 10 (dub) | `t_src_start`, `t_src_source`, `deadline`, `t_play_start`, `sync_err_s` (actual play minus deadline), `delay_s`, `stretch_ratio`, `voice_under_db` |
+| Policy v2 | `mt_calls_per_commit`, `speculation_hit`, `translatable_ratio` |
+| Order and turns | `seq`, `seq_skipped`, `yields` |
+| ASR characterization | `partial_interval_s`, `endpoint_delay_s`, `prefix_revisions` |
+
+All `t_*` fields use one clock (§7.2). No gate is considered passed without these numbers.
+
+## 5. Gates
+
+- **60 s monologue, incremental mode:** commit → first PCM **mean 2–4 s, p95 ≤ 4 s**, 0 audible corrections, 0 cable gaps, 100 % of bytes written to the cable.
+- **Bidirectional human test in Meet** with a second account or device: the remote hears English, I see Spanish.
+- **Declared baseline of the earlier prototype** (other providers, Aug 2026): 2.3–2.6 s mean, 2.9–3.6 s p95. Goal this week: match or beat it **on Meta**, measured on screen.
+- **Gate S (piece 10):** 60 s monologue with fixed D: p95 |`sync_err_s`| ≤ 0.5 s, no chunk played more than 1 s after its deadline, and a 20 s clip of what the remote sees where lips and voice start and stop together.
+
+## 6. Known traps (already solved once; do not rediscover)
+
+- **Bluetooth headphones:** never open the Bose microphone (it switches the headset to HFP and degrades both directions); disable "Hands-Free Telephony" on the device.
+- **Meet must stay unmuted** with `CABLE Output` selected; Meet's own mute blocks the whole track while our logs look green. Turn off Meet's noise cancellation.
+- **Realtek mic array WASAPI endpoint fails intermittently** (`WDM-KS 0x492`): two attempts, then fall back to the shared duplicate of the *same* device (another host API), never to the jack mic.
+- **Edge TTS adds leading and trailing silence** per request: trim only PCM silence, conservative threshold, 60 ms margin; never cut speech.
+- **Cable sample rate:** open `CABLE Input` at the endpoint's real rate (`sd.query_devices(i)["default_samplerate"]`) or with WASAPI auto-convert; never assume 48 kHz. Same for the mic: request 16 kHz with auto-convert, or resample with `soxr`. *[verified 2026-10-29 on this PC: WASAPI `CABLE Input` 48 000 Hz, `CABLE Output` 48 000 Hz, Realtek mic array 48 000 Hz; MME/DirectSound duplicates report 44 100 Hz]*
+- **VB-CABLE** is installed on this PC (one cable is enough with a passive incoming tap). *[verified 2026-10-29]*
+- **Headphones are mandatory on my side.** With speakers, the mic captures the remote's voice and the outgoing chain translates it back (translated echo). `scripts/warmcheck.py` warns when the default output does not look like headphones (name heuristic; never blocks).
+
+---
+
+## 7. Contracts, clock, task map and state machine
+
+The minimum needed so that the deadline queue (Thursday) and the dub (Saturday) speak about the same times. Fields marked ★ feed the gates and may not be removed.
+
+### 7.1 Who talks to whom
+
+```mermaid
+flowchart LR
+  subgraph OUT["Outgoing: me → them"]
+    MIC["Physical mic"] --> CAPo["audio.capture<br/>PCM blocks + t_capture"]
+    CAPo --> ASRo["asr.meta_realtime<br/>WS, es + Spanglish"]
+    ASRo --> POLo["policy (LA-2)<br/>AsrEvent → Commit"]
+    POLo --> MTo["mt.spark<br/>es→en, structured JSON"]
+    MTo --> TTSo["tts.edge<br/>Commit → PcmChunk"]
+    TTSo --> SCH["policy.scheduler<br/>ordered by seq, not before t_src_start + D"]
+    SCH --> MIX["audio.cable_mixer<br/>states · CABLE Input"]
+    CAPo -. "original voice delayed D, −20 dB (piece 10)" .-> MIX
+    MIX --> MEET["Meet / Zoom / Teams<br/>mic = CABLE Output"]
+    CAM["HD webcam"] --> VCAM["video.virtual_cam<br/>frame ring, delay D"] --> MEET
+  end
+  subgraph IN["Incoming: them → me"]
+    LOOP["WASAPI loopback"] --> CAPi["audio.capture"] --> ASRi["asr.meta_realtime<br/>WS, en"]
+    ASRi --> POLi["policy"] --> MTi["mt.spark en→es"] --> OVL["ui.overlay<br/>dual transcript"]
+  end
+  ASRi -- "sustained speech on the other channel" --> TURNS["turns.collision"] -- "yield at chunk boundary" --> SCH
+  POLo & POLi & SCH & MIX & VCAM --> MET["metrics.jsonl<br/>single writer"]
+```
+
+### 7.2 Clock
+
+- One clock for the whole process: `time.perf_counter()`. Never `time.time()` in a `t_*` field. Audio and video threads use the same clock as the asyncio tasks.
+- Every capture block carries `t_capture` = `perf_counter()` in the callback **minus the block duration**, i.e. the instant of its first sample.
+- The ASR speaks in time relative to the start of its stream. When the first block of a session is sent, the session stores `t_capture_first` (that block's `t_capture`, not the send instant). From then on `t_local = t_capture_first + t_asr_s`. On reconnect (60 min session cap) the `session_id` changes and a new `t_capture_first` is stored.
+- *[verified 2026-10-29, dev.meta.ai/docs/speech-to-text and cookbook `06_muse_voice/02_voice_chess_cua/.../asr_protocol.py`]* Every realtime event (`speechStart`, `transcript`, `speaker`, `speechEnd`, `speechComplete`, `audioProgress`) carries an integer `audioProcessedMs`. The docs define it as **processing progress, not a word timestamp**; word-level timestamps are not available on the realtime endpoint (turn-level `startMs`/`endMs` exist only in the one-shot `transcribe` response). So `t_asr_s = audioProcessedMs / 1000` is the stream position the server had consumed when it emitted the event.
+- Corollary: `t_recv − (t_capture_first + t_asr_s)` is the pure transport + buffering lag of an event, measurable on every frame.
+
+### 7.3 The three contracts (`src/interprete/contracts.py`)
+
+No module hands another raw JSON or anonymous tuples.
+
+- **`AsrEvent`** (frozen): one normalized server frame. `channel`, `kind` (`speechStart`, `speechEnd`, `speechComplete`, `partial`, `final`, `speaker`, `audioProgress`, `error`), ★`t_recv`, `session_id`, `turn_id`, `text` (the cumulative transcript of the turn), `t_asr_s`, `speaker`, `raw` (debug log only).
+- **`Commit`**: one committed clause, irreversible from birth. ★`utterance_id` = `f"{channel}:{session_id}:{turn_id}"`, ★`commit_id` (0, 1, 2… inside the utterance), ★`seq` (global per-channel counter assigned at creation; **playback order is `seq` order**), `channel`, `text_src` (this clause's delta), `prefix_src` (what was committed before in the utterance, as context), `boundary` (`punct | conj | pause | speechEnd | speechComplete | words | time`), ★`t_src_start`, `t_src_end`, `t_src_source` (`asr_ts | speech_start | partial_arrival`), ★`t_commit`, `text_tgt`, `remainder`, ★`t_mt`, `mt_calls`, `speculation_hit`.
+- **`PcmChunk`**: audio ready for the cable, created by `tts/`, consumed by the scheduler. `utterance_id`, `commit_id`, ★`seq`, `channel`, `pcm` (int16 LE mono, silences already trimmed), `sample_rate` (**the cable's real rate**, 48 000 on this PC), `duration_s`, `t_src_start`, `t_src_end`, ★`deadline` = `t_src_start + D`, `stretch_ratio`, ★`t_tts_first`, `t_tts_end`, ★`t_play_start` (written by the scheduler when handing the chunk to the mixer) and the derived ★`sync_err_s = t_play_start − deadline` (gate S).
+
+Video uses `(t_capture, frame)` pairs in a `collections.deque`; the frame emitted is the newest with `t_capture ≤ now − D`.
+
+### 7.4 Where `t_src_start` comes from
+
+This decides whether the dub looks synchronized. In order of preference; `t_src_source` records which one was used:
+
+1. **`asr_ts`** — `t_capture_first + t_asr_s` of the clause's first word, if the ASR gives word or segment times. *[verified 2026-10-29: it does not; only `audioProcessedMs` per event.]* The closest available is the `audioProcessedMs` of the `speechStart` event (for a turn's first clause) and of the first partial containing the clause's first word (later clauses). These are processing positions, so they trail the true onset by the server's detection delay; that bias is measured once and subtracted.
+2. **`speech_start`** — for a turn's first clause: the turn's `speechStart`, via its `t_asr_s`, else `t_recv − lat_asr`.
+3. **`partial_arrival`** — for later clauses: `t_recv` of the first partial where the clause's first word appeared, minus `lat_asr`. `lat_asr` is the ASR's p50 latency measured on Thursday, recalibrated every run from the gap between `speechStart` and the turn's first partial.
+
+`t_src_end` likewise, from the last word or `speechEnd`. Gate S checks the scheduler against the deadline; the error of `t_src_start` itself is measured once with a clap in front of the camera (`scripts/calibrate_av_offset.py`) and corrected with `RTT_AV_OFFSET_MS`. If the clap shows more than 0.3 s spread with method 3, shorten the partial interval or move to method 1.
+
+### 7.5 Asyncio task map
+
+One `asyncio.TaskGroup` per channel plus a shared one. `sounddevice` callbacks and OpenCV threads are not tasks: they hand data to asyncio with `loop.call_soon_threadsafe` and never block. Queues are bounded `asyncio.Queue`s; the PCM queue drops the oldest block rather than block capture.
+
+| Task | Reads | Writes | Does | On cancel / failure |
+|---|---|---|---|---|
+| `capture[c]` (callback) | device (mic and cable via `sounddevice`; loopback via `pyaudiowpatch`) | `q_pcm[c]` | 20 ms blocks with `t_capture` | never blocks; underruns counted |
+| `asr_send[c]` | `q_pcm[c]` | WS (binary) | resample to 16 kHz mono; store `t_capture_first`; never more than 5 s ahead of real time; reconnect at 55 min with `endStream` + new session | WS error → reconnect with backoff; channel stays in passthrough meanwhile |
+| `asr_recv[c]` | WS (text) | `q_events[c]`, `q_metrics` | normalize to `AsrEvent`; keep the clock mapping | ASR `error` is logged and treated as a cut |
+| `policy[c]` | `q_events[c]` | `q_commits[c]` | consecutive: one `Commit` per `speechComplete`; incremental: LA-2 over cumulative partials; derive `t_src_start` (§7.4); at most one speculation task in flight | committed text untouched; late correction → `corrections_blocked += 1` |
+| `mt[c]` | `q_commits[c]` | `q_translated[c]`, `q_metrics` | Spark with `prefix_src`, the last N commits of both channels and the glossary; structured output; minimum reasoning | 4 s timeout → **tombstone** to the scheduler, counted; overlay shows source text in grey; never waits unbounded |
+| `tts[out]` | `q_translated[out]` | `scheduler.submit()` | Edge TTS streaming → PCM at cable rate → trim silences → `rate` from word count and `t_src_end − t_src_start` (isochrony) → `PcmChunk`; runs ahead of playback, so pre-synthesis comes for free | 4 s timeout → tombstone, counted |
+| `overlay[in]` | `q_translated[in]` | UI | EN/ES subtitles; backchannels as text only | — |
+| `scheduler` (one per output; only `out` this week) | heap by `seq` + tombstones | mixer ring, `q_metrics` | see §7.5.1 | F9 empties heap and ring |
+| `mixer` (output callback, `CABLE Input`) | TTS ring, delayed-voice ring, live mic ring | cable | sums by state (§7.6) | underrun → zeros, `cable_gaps += 1`; never blocks |
+| `turns` | copy of `q_events[in]` | `scheduler.yield_current()`, UI | **sustained** speech on IN while OUT is playing (≥ 0.7 s without `speechEnd`, or a partial with ≥ 3 words; an "uh-huh" does not count) → **yield the turn**: the current chunk finishes (200 ms fade in DUB), the rest of the utterance is dropped and shown in grey on my overlay, red band, `yields += 1`. No resumption | piece 3 (Sunday); `yield_current()` exists from Thursday |
+| `video` (two threads) | HD webcam by name | OBS Virtual Camera | capture → deque → emit frame with `t_capture ≤ now − D`; title card during the first D s; D fixed per session | piece 10 (Saturday); F9 jumps to live together with audio |
+| `safety` | hotkeys, watchdog | mixer state, `q_metrics` | F7 start, F8 pause/mute, F9 kill (< 200 ms), F10 restore default mic (< 1 s, pycaw); 2 s watchdog | `finally` + `atexit` + signal: restore device, close cable, last virtual-camera frame = title card |
+| `metrics` | `q_metrics` | `logs/run_<date>.jsonl` | single writer; one line per event | on disk failure keep running without metrics and say so |
+
+The unit of cancellation is `utterance_id`: F9 and turn yields mark utterances cancelled; `mt`, `tts` and the scheduler check before every step. Speculation tasks are children of `policy[c]`. Reconnecting the ASR changes `session_id`, so `utterance_id`s never collide.
+
+#### 7.5.1 Scheduler rules (ordered by `seq`, deadline = "not before")
+
+Why `seq` and not deadline order: TTS jobs can finish out of order, and emitted audio cannot be corrected, so the only safe emission order is the commit order. The deadline only says *not before*.
+
+1. The head of the queue plays when `now ≥ deadline_eff` **and** the previous `seq` has already played or has a tombstone. `deadline_eff = max(deadline, end of the previous chunk on this channel)`.
+2. `mt` and `tts` always deliver something for every `seq`: the `PcmChunk` or a tombstone (`scheduler.tombstone(seq)`) when they drop it for timeout, error or cancellation. Tombstones are what keep a dropped clause from stalling everything behind it.
+3. Safety net for a missing `seq` without tombstone (a bug, not a normal path): wait at most 1 s past its deadline, then skip it (`seq_skipped += 1`) and drop it if it arrives later. **Clarification for `D = 0`:** there the deadline (`t_src_start`) is already in the past when the commit is born, so "1 s past the deadline" would skip every clause still in MT/TTS. With `D = 0` the skip horizon is `t_commit + mt_timeout + tts_timeout + 1 s` (= 9 s), i.e. after both stages had the chance to deliver or tombstone. With `D > 0` the rule is exactly "1 s past the deadline".
+4. The scheduler writes `t_play_start` on handoff to the mixer.
+5. Catch-up 1.1× when the backlog exceeds 3 s (`D = 0`) or `sync_err_s` exceeds 0.5 s (`D > 0`). *(Built with the incremental mode on Saturday; with consecutive mode the backlog is only measured.)*
+6. Chunks of cancelled or yielded utterances are dropped.
+
+### 7.6 Outgoing mixer state machine
+
+| From → to | Trigger | What the cable carries |
+|---|---|---|
+| `OFF → PASSTHROUGH` | F7 / "Ready": cable open, mic capturing, ASR connected | live voice, 0 dB |
+| `PASSTHROUGH → TTS` (`D = 0`) | the scheduler hands over the first `PcmChunk`; live voice is cut at that instant, not before | TTS only |
+| `TTS → PASSTHROUGH` | heap empty and nothing in flight 300 ms after the last chunk ended; or error, timeout, watchdog, F9 (buffers cleared) | live voice |
+| `PASSTHROUGH → DUB` (`D > 0`) | dubbing enabled: the voice ring starts filling; the first D s are silent while the virtual camera shows the title card | original voice delayed D at −20 dB + TTS at its deadlines; **never drops back to `PASSTHROUGH` between clauses** (live voice would run ahead of its own video) |
+| `DUB → PASSTHROUGH` | F9, error or watchdog: audio and video jump to live **together** (one cut, never desync) | live voice |
+| `any → MUTE` | F8 | silence |
+| `MUTE → previous` | F8 again | whatever was there |
+| `any → OFF` | normal close or exception | cable closed; F10 restores the default mic, also without closing |
+
+Yielding the turn does not change state: in `TTS` the heap empties and after 300 ms it returns to `PASSTHROUGH`; in `DUB` it stays in `DUB` (the remote sees up to D seconds of silent lips: accepted cost, never a jump). Measured: F9 < 200 ms from key to first live-voice block; F10 < 1 s; watchdog 2 s. Every transition is a `state` event in the JSONL.
+
+---
+
+## 8. Meta Model API facts this design relies on
+
+- Base URL `https://api.meta.ai/v1`, key in `MODEL_API_KEY`, OpenAI-SDK compatible. Spark model `muse-spark-1.3`, structured output and reasoning levels (use the lowest for translation). *[from dev.meta.ai/docs, read 2026-10-27]*
+- Realtime ASR `wss://api.meta.ai/v1/asr/realtime`, model `muse-voice-transcribe-1.0`. *[verified 2026-10-29, docs + official cookbook `06_muse_voice/01_voice_api_fundamentals`]*:
+  - First text frame = handshake, within 10 s: `mode` (`PUSH_TO_TALK` default, `ENDPOINTING`, `DIARIZATION`; fixed for the session), `authorization.accessToken`, `audioEncoding` (`PCM_24KHZ` engine-native, or `PCM_16KHZ`), `model`, `partialMode` (`CUMULATIVE` default, or `DELTA`), `emitAudioProgress`, optional `keywords` and `languageBias` (hints, not constraints). The ack is a bare `{"sessionId": ...}` with no `type`; send audio only after it.
+  - **`accessToken` format differs between sources:** the docs and API reference examples use `"Bearer <key>"`; the cookbook sends the bare key. The client sends the documented `Bearer` form and falls back to the bare key if the handshake is rejected.
+  - **The server silently ignores unknown handshake fields** (cookbook `utils.py`), so a field cannot be "tested into existence".
+  - **No endpointing sensitivity / minimum-silence / VAD parameter** appears in the docs pages, the API reference page or the cookbook's protocol module. *[not verified in the full schema page, which was not reachable; treated as non-existent]* Consequence: the delay of `speechComplete` after a pause is the server's, and is measured (§4 `endpoint_delay_s`), not tuned.
+  - Binary frames = raw PCM16 mono. The backend processes 80 ms chunks; frame size carries no meaning, smaller frames lower latency.
+  - Close codes: `1008` (no handshake in 10 s, **more than 5 s of audio backlog**, or **ingress below real time for 10 s** → pad silence during gaps), `1011` (server error or 60 min cap), `1013` (rate limited). End: send `{"type":"endStream"}`, keep reading until close `1000`.
+- **No Meta TTS exists.** The outgoing voice is Microsoft Edge TTS (`edge-tts`); this is stated plainly in the README.
