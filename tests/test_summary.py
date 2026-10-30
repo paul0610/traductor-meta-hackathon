@@ -1,4 +1,5 @@
-from interprete.metrics.summary import gate_60s, gate_a, summarize
+from interprete.metrics.summary import gate_60s, gate_a, gate_s, summarize
+from interprete.metrics.truth import clause_truth
 
 
 def out_row(seq, lag):
@@ -50,3 +51,36 @@ def test_gate_a_needs_both_directions():
     assert gate_a(summarize([out_row(0, 2.0), in_row(0), end()])) == []
     assert any("incoming" in f for f in gate_a(summarize([out_row(0, 2.0), end()])))
     assert any("outgoing" in f for f in gate_a(summarize([in_row(0)])))
+
+
+def dubbed(seq, late):
+    return dict(ev="commit", phase="report", channel="out", seq=seq, t_commit=10.0, t_src_start=7.0,
+                t_play_start=12.5 + late)
+
+
+RUN = dict(ev="run", delay_s=5.5, voice_under_db=-20.0, delay_jumps=0)
+
+
+def test_gate_s_passes_when_clauses_meet_their_deadlines():
+    assert gate_s(summarize([dubbed(0, 0.0), dubbed(1, 0.3), end(), RUN])) == []
+
+
+def test_gate_s_fails_on_spread_and_on_a_clause_a_second_late():
+    fails = gate_s(summarize([dubbed(0, 0.0), dubbed(1, 1.2), end(), RUN]))
+    assert any("p95" in f for f in fails)
+    assert any("past their deadline" in f for f in fails)
+
+
+def test_gate_s_needs_a_dub():
+    assert gate_s(summarize([out_row(0, 2.0), end()])) == ["no dubbed clause in this run"]
+
+
+def test_clause_truth_finds_the_first_word_even_if_the_asr_changed_others():
+    words = [dict(text=w, t=float(i)) for i, w in enumerate("Tengo cinco años de experiencia".split())]
+    rows = [dict(seq=3, text_src="Tengo 5 años,"), dict(seq=4, text_src="de experiencia.")]
+    assert clause_truth(rows, words, 100.0) == {3: 100.0, 4: 103.0}
+
+
+def test_clause_truth_leaves_out_a_clause_whose_first_word_changed():
+    words = [dict(text=w, t=float(i)) for i, w in enumerate("cinco años de experiencia".split())]
+    assert clause_truth([dict(seq=0, text_src="5 años"), dict(seq=1, text_src="de experiencia")], words, 0.0) == {1: 2.0}

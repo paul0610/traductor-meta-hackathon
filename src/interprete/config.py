@@ -28,6 +28,8 @@ class Settings:
     av_offset_ms: float
     overlay_hide_from_capture: bool
     mode: str
+    dub: bool
+    camera_name: str
 
 
 def load() -> Settings:
@@ -36,11 +38,13 @@ def load() -> Settings:
         tts_voice=os.environ.get("RTT_TTS_VOICE", "en-US-GuyNeural"),
         cable_name=os.environ.get("RTT_CABLE_NAME", "CABLE Input"),
         mic_name=os.environ.get("RTT_MIC_NAME", "Realtek"),
-        delay_s=float(os.environ.get("RTT_DELAY_S", "5.5")),
+        delay_s=float(os.environ.get("RTT_DELAY_S", "6.0")),
         voice_under_db=float(os.environ.get("RTT_VOICE_UNDER_DB", "-20")),
         av_offset_ms=float(os.environ.get("RTT_AV_OFFSET_MS", "0")),
         overlay_hide_from_capture=os.environ.get("RTT_OVERLAY_HIDE_FROM_CAPTURE", "0") == "1",
         mode=os.environ.get("RTT_MODE", "incremental"),
+        dub=os.environ.get("RTT_DUB", "0") == "1",
+        camera_name=os.environ.get("RTT_CAMERA_NAME", "HD UVC"),
     )
 
 

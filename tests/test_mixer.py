@@ -5,6 +5,7 @@ import pytest
 
 from interprete.audio import cable_mixer
 from interprete.audio.cable_mixer import CableMixer, State
+from interprete.audio.delay import DelayLine
 from interprete.audio.ring import Ring
 from interprete.contracts import Channel, PcmChunk
 
@@ -117,3 +118,81 @@ def test_release_empties_the_cable_and_returns_to_rest(mixer):
     assert mixer.state is State.SILENT
     assert np.all(block(mixer) == 0.0)
     assert not mixer.busy()
+
+
+@pytest.fixture
+def dub(mixer):
+    mixer.dub(DelayLine(RATE, 0.05), -20.0)
+    mixer._state = mixer.rest
+    return mixer
+
+
+def block_dub(m, voice=0.5):
+    n = m.block
+    m.delay.write(np.full(n, voice, np.float32))
+    return block(m, voice)
+
+
+def fill(m, voice=0.5):
+    for _ in range(int(0.05 * RATE / m.block)):
+        block_dub(m, voice)
+
+
+def test_dub_is_silent_until_the_line_fills_then_my_voice_comes_attenuated(dub):
+    assert np.all(block_dub(dub) == 0.0)
+    fill(dub)
+    assert dub.state is State.DUB
+    assert np.allclose(block_dub(dub)[:, 0], 0.05, atol=1e-5)
+
+
+def test_dub_mutes_my_voice_with_minus_infinity(mixer):
+    mixer.dub(DelayLine(RATE, 0.05), float("-inf"))
+    mixer._state = mixer.rest
+    fill(mixer)
+    assert np.all(block_dub(mixer) == 0.0)
+
+
+def test_dub_stays_between_clauses_with_the_tts_on_top_of_my_voice(dub):
+    fill(dub)
+    dub.play(tts(dur=0.005), 0.0)
+    out = block_dub(dub)
+    assert dub.state is State.DUB
+    assert out[0, 0] == pytest.approx(0.30, abs=1e-3)   # TTS + voice under
+    dub.release_if_idle(0, 1e9)
+    assert dub.state is State.DUB
+
+
+def test_f9_leaves_the_dub_for_live_voice_and_the_return_repeats_nothing(dub):
+    fill(dub)
+    dub.kill()
+    assert np.allclose(block_dub(dub, 0.9)[:, 0], 0.9)
+    dub.unlatch()
+    assert dub.state is State.DUB
+    assert np.all(block_dub(dub, 0.5) == 0.0)           # silence, not what was already heard live
+
+
+def test_mute_keeps_the_delay_running(dub):
+    fill(dub)
+    dub.toggle_mute()
+    assert np.all(block_dub(dub) == 0.0)
+    dub.toggle_mute()
+    assert dub.state is State.DUB
+    assert np.allclose(block_dub(dub)[:, 0], 0.05, atol=1e-5)
+
+
+def test_asr_down_leaves_the_dub_for_live_voice_and_comes_back(dub):
+    fill(dub)
+    dub.set_rest(State.PASSTHROUGH)
+    assert np.allclose(block_dub(dub, 0.9)[:, 0], 0.9)
+    dub.set_rest(State.DUB)
+    assert dub.state is State.DUB
+
+
+def test_a_watchdog_release_empties_the_tts_and_stays_in_the_dub(dub):
+    fill(dub)
+    dub.play(tts(dur=0.5), 0.0)
+    block_dub(dub)
+    dub.release("watchdog")
+    assert dub.state is State.DUB
+    assert np.allclose(block_dub(dub)[:, 0], 0.05, atol=1e-5)
+    assert not dub.busy()

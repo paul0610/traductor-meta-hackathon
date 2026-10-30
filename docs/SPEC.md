@@ -69,7 +69,7 @@ All `t_*` fields use one clock (§7.2). No gate is considered passed without the
 - **60 s monologue, incremental mode:** commit → first PCM **mean 2–4 s, p95 ≤ 4 s**, 0 audible corrections, 0 cable gaps, 100 % of bytes written to the cable.
 - **Bidirectional human test in Meet** with a second account or device: the remote hears English, I see Spanish.
 - **Declared baseline of the earlier prototype** (other providers, Aug 2026): 2.3–2.6 s mean, 2.9–3.6 s p95. Goal this week: match or beat it **on Meta**, measured on screen.
-- **Gate S (piece 10):** 60 s monologue with fixed D: p95 |`sync_err_s`| ≤ 0.5 s, no chunk played more than 1 s after its deadline, and a 20 s clip of what the remote sees where lips and voice start and stop together.
+- **Gate S (piece 10):** 60 s monologue with fixed D: p95 |`sync_err_s`| ≤ 0.5 s, no chunk played more than 1 s after its deadline, and a 20 s clip of what the remote sees where lips and voice start and stop together. `scripts/gate_sync.py` judges the numbers and also prints what the gate cannot see: `t_src_start` against the fixture's real word times, and the real delay of the voice on the cable.
 
 ## 6. Known traps (already solved once; do not rediscover)
 
@@ -137,9 +137,11 @@ This decides whether the dub looks synchronized. In order of preference; `t_src_
 
 1. **`asr_ts`** — `t_capture_first + t_asr_s` of the clause's first word, if the ASR gives word or segment times. *[verified 2026-10-29: it does not; only `audioProcessedMs` per event.]* The closest available is the `audioProcessedMs` of the `speechStart` event (for a turn's first clause) and of the first partial containing the clause's first word (later clauses). These are processing positions, so they trail the true onset by the server's detection delay; that bias is measured once and subtracted.
 2. **`speech_start`** — for a turn's first clause: the turn's `speechStart`, via its `t_asr_s`, else `t_recv − lat_asr`.
-3. **`partial_arrival`** — for later clauses: `t_recv` of the first partial where the clause's first word appeared, minus `lat_asr`. `lat_asr` is the ASR's p50 latency measured on Thursday, recalibrated every run from the gap between `speechStart` and the turn's first partial.
+3. **`partial_arrival`** — for later clauses: a line through the stream positions at which the clause's words and the six before them first appeared, read at the clause's first word, minus `WORD_LAG_S`. The position of a single partial is not enough: one word can surface late, and the first version (that position minus one word) was 0.44 s late at p50.
 
-`t_src_end` likewise, from the last word or `speechEnd`. Gate S checks the scheduler against the deadline; the error of `t_src_start` itself is measured once with a clap in front of the camera (`scripts/calibrate_av_offset.py`) and corrected with `RTT_AV_OFFSET_MS`. If the clap shows more than 0.3 s spread with method 3, shorten the partial interval or move to method 1.
+**As measured on Friday (Oct 30)** against the word times Edge reports for the fixtures (`scripts/make_fixtures.py`, about 0.06 s ahead of the energy onset): `speechStart` sits 0.26 s *before* the first word (p50, ±0.22 at p95, 35 turns), and a word starts 0.69 s before the partial that first carries it. Both are constants in `policy/incremental.py`. The line takes the spread of a mid-turn clause from ±0.59 to ±0.38 s (p95, 157 clauses, 7 runs); a per-turn calibration of the lag was tried and is worse (±0.58): one word is too noisy to calibrate on. They are measured on synthetic voices; on a real voice the ASR lags 0.4 s more (§4 mic vs. fixture) and the clap measures what remains.
+
+`t_src_end` is the same line read one word past the clause: where the next word would start. Gate S checks the scheduler against the deadline; the error of `t_src_start` itself is printed by `scripts/gate_sync.py` on every fixture run and measured once with a clap in front of the camera for a real voice, corrected with `RTT_AV_OFFSET_MS`.
 
 ### 7.5 Asyncio task map
 
@@ -152,7 +154,7 @@ One `asyncio.TaskGroup` per channel plus a shared one. `sounddevice` callbacks a
 | `asr_recv[c]` | WS (text) | `q_events[c]`, `q_metrics` | normalize to `AsrEvent`; keep the clock mapping | ASR `error` is logged and treated as a cut |
 | `policy[c]` | `q_events[c]` | `q_commits[c]` | consecutive: one `Commit` per `speechComplete`; incremental: LA-2 over cumulative partials; derive `t_src_start` (§7.4); at most one speculation task in flight | committed text untouched; late correction → `corrections_blocked += 1` |
 | `mt[c]` (two at a time on `out`) | `q_commits[c]` | `q_translated[c]`, `q_metrics` | Spark with `prefix_src`, the last N commits of both channels and the glossary; structured output; minimum reasoning | 4 s timeout → **tombstone** to the scheduler, counted; overlay shows source text in grey; never waits unbounded |
-| `tts[out]` | `q_translated[out]` | `scheduler.submit()` | Edge TTS streaming → PCM at cable rate → trim silences → `rate` from word count and `t_src_end − t_src_start` (isochrony) → `PcmChunk`; runs ahead of playback, so pre-synthesis comes for free | 4 s timeout → tombstone, counted |
+| `tts[out]` | `q_translated[out]` | `scheduler.submit()` | Edge TTS streaming → PCM at cable rate → trim silences → `rate` from word count and `t_src_end − t_src_start` (isochrony) → `PcmChunk`; runs ahead of playback, so pre-synthesis comes for free | keeps trying for 6 s, then tombstone, counted |
 | `overlay[in]` | `q_translated[in]` | UI | EN/ES subtitles; backchannels as text only | — |
 | `scheduler` (one per output; only `out` this week) | heap by `seq` + tombstones | mixer ring, `q_metrics` | see §7.5.1 | F9 empties heap and ring |
 | `mixer` (output callback, `CABLE Input`) | TTS ring, delayed-voice ring, live mic ring | cable | sums by state (§7.6) | underrun → zeros, `cable_gaps += 1`; never blocks |
@@ -169,9 +171,9 @@ Why `seq` and not deadline order: TTS jobs can finish out of order, and emitted 
 
 1. The head of the queue plays when `now ≥ deadline_eff` **and** the previous `seq` has already played or has a tombstone. `deadline_eff = max(deadline, end of the previous chunk on this channel)`.
 2. `mt` and `tts` always deliver something for every `seq`: the `PcmChunk` or a tombstone (`scheduler.tombstone(seq)`) when they drop it for timeout, error or cancellation. Tombstones are what keep a dropped clause from stalling everything behind it.
-3. Safety net for a missing `seq` without tombstone (a bug, not a normal path): wait at most 1 s past its deadline, then skip it (`seq_skipped += 1`) and drop it if it arrives later. **Clarification for `D = 0`:** there the deadline (`t_src_start`) is already in the past when the commit is born, so "1 s past the deadline" would skip every clause still in MT/TTS. With `D = 0` the skip horizon is `t_commit + mt_timeout + tts_timeout + 1 s` (= 9 s), i.e. after both stages had the chance to deliver or tombstone. With `D > 0` the rule is exactly "1 s past the deadline".
+3. Safety net for a missing `seq` without tombstone (a bug, not a normal path): skip it once both stages had the chance to answer, `max(deadline, t_commit + mt_timeout + tts_timeout) + 1 s` (`seq_skipped += 1`), and drop it if it arrives later. A clause that is merely late still plays: with `D > 0` it sounds on arrival with `sync_err_s > 0`. The first version skipped 1 s past the deadline, which lost clauses that were only slow; a late clause costs a moment of sync, a lost one costs the sentence.
 4. The scheduler writes `t_play_start` on handoff to the mixer.
-5. Catch-up 1.1× when the backlog exceeds 3 s (`D = 0`) or `sync_err_s` exceeds 0.5 s (`D > 0`). *(Built with the incremental mode on Saturday; with consecutive mode the backlog is only measured.)*
+5. Catch-up +10 % when the backlog exceeds 3 s (`D = 0`) or the clause would start more than 0.5 s past its deadline, counting what still plays before it (`D > 0`). Three clauses in a row more than 1 s late: the bar proposes restarting with D + 0.5 s. D never changes by itself.
 6. Chunks of cancelled or yielded utterances are dropped.
 
 ### 7.6 Outgoing mixer state machine
@@ -184,15 +186,18 @@ Why `seq` and not deadline order: TTS jobs can finish out of order, and emitted 
 | `SILENT ↔ PASSTHROUGH` | the ASR drops and comes back: while nothing can be translated, the other side at least hears me | live voice |
 | `any → PASSTHROUGH` | F9 (buffers cleared, latched; no chunk takes the cable while latched) | live voice |
 | `PASSTHROUGH → SILENT` | F9 again | silence |
-| `SILENT → DUB` (`D > 0`) | dubbing enabled: the voice ring starts filling; the first D s are silent while the virtual camera shows the title card | original voice delayed D at −20 dB + TTS at its deadlines; **never drops back to `SILENT` between clauses** |
-| `DUB → PASSTHROUGH` | F9, error or watchdog: audio and video jump to live **together** (one cut, never desync) | live voice |
+| `OFF → DUB` (`D > 0`) | `--dub`: DUB takes the place of `SILENT` as the rest state; the delay line fills, the first D s are silent while the virtual camera shows the title card | original voice delayed D at −20 dB + TTS at its deadlines; **never leaves on its own between clauses** |
+| `DUB → PASSTHROUGH` | F9, a fatal error, or the ASR down > 3 s: audio and video jump to live **together** (one cut, never desync) | live voice |
+| `PASSTHROUGH → DUB` | F9 again, or the ASR back: the delay line and the frame ring start over, so what was heard live is never heard twice | silence and title card for D s, then as above |
 | `any → MUTE` | F8 | silence |
 | `MUTE → previous` | F8 again | whatever was there |
 | `any → OFF` | normal close or exception | cable closed; F10 restores the default mic, also without closing |
 
 Yielding the turn does not change state: in `TTS` the heap empties and after 300 ms it returns to `SILENT`; in `DUB` it stays in `DUB` (the remote sees up to D seconds of silent lips: accepted cost, never a jump). Measured: F9 < 200 ms from key to first live-voice block; F10 < 1 s; watchdog 2 s. Every transition is a `state` event in the JSONL.
 
-The watchdog does not cancel a clause that is merely slow: if the next clause is still in Spark or TTS more than 2 s after the last audio, the cable goes back to rest and the clause retakes it when ready. Only a stalled callback or a scheduler that stopped stepping clears the work in flight.
+The watchdog does not cancel a clause that is merely slow: if the next clause is still in Spark or TTS more than 2 s after the last audio, the cable goes back to rest and the clause retakes it when ready. Only a stalled callback or a scheduler that stopped stepping clears the work in flight. In a dub the watchdog empties the TTS and stays in `DUB`: as at `D = 0`, raw voice at full level only ever comes from F9 or the ASR fallback.
+
+The delay line (`audio/delay.py`) is written by the mic callback and read by the cable callback, two devices with two clocks. Its fill level is the delay, so that is what it watches: drift or a stall moves the level, and past ±40 ms the reader jumps back to D. Under the TTS a jump is not heard; a delay that wanders away from the video would be seen.
 
 ---
 
@@ -211,5 +216,8 @@ The watchdog does not cancel a clause that is merely slow: if the next clause is
 ## 9. Edge TTS facts this design relies on *[measured 2026-10-30 on this PC; Edge publishes none of this]*
 
 - **Edge rate-limits new connections, not requests.** `edge_tts` opens one per request: at one every 0.75 s, 52 of 80 failed with `NoAudioReceived` after ~3.2 s, whatever the text; at one every 1.5 s, 1 of 60. A second identical request and one differing by +1 % rate failed alike, so racing a new connection does not rescue a throttled one.
-- **One open WebSocket carries many turns.** Same protocol, kept open: 80 of 80 at the same pace, 60 of 60 at one every 0.4 s, first audio p50 0.25–0.27 s against 1.0 s, whole clause 0.36–0.42 s against 1.3 s. The handshake (0.8–1.1 s) was the cost. `tts/edge_session.py` keeps two open.
-- **An idle socket dies** between 30 and 60 s, a WS ping does not prevent it, and resending `speech.config` every 10 s does (alive at 150 s, the longest tried). Lifetime under keep-alive beyond that is unknown; a dropped socket reopens in the background and the clause falls back to a one-shot request.
+- **One open WebSocket carries many turns.** Same protocol, kept open: 80 of 80 at the same pace, 60 of 60 at one every 0.4 s, first audio p50 0.25–0.27 s against 1.0 s, whole clause 0.36–0.42 s against 1.3 s. The handshake (0.8–1.1 s) was the cost. `tts/edge_session.py` keeps three open: one per worker and a spare.
+- **An idle socket dies** between 30 and 60 s, a WS ping does not prevent it, and resending `speech.config` every 10 s does (alive at 150 s, the longest tried). Lifetime under keep-alive beyond that is unknown; a dropped socket reopens in the background.
+- **Edge has bad windows.** From 15 s to a minute at a time, turns on healthy sockets take 1–3 s, or the server closes the socket 2.5 s after the request with no close code. In one clean probe, app off, 9 of 127 turns; on the worst run of the day, 4 of 28 clauses timed out at 4 s. No pattern by the hour: runs a minute apart went from 0 to 11 hedges. A stalled turn races the spare socket and a one-shot request at 1.2 s; if everything fails, the clause tries again until 6 s. The 4 s of the first version lost clauses: the server can refuse all of it for more than that.
+- **Intermediate `rate` values are worse than 0 and +25 %.** Rate drawn at random per turn in the same window, three experiments: 1 of 262 turns failed at 0 or +25 %, 5 of 179 at anything else, with first audio at p50 0.35 s against 0.23 s in the worst window. Nothing explains it and the sample of failures is small, but the fix costs little: the isochrony uses only those two steps, which leaves the voice within ±12.5 % of the clause, inside the ±15 % goal.
+- **Clause length is predicted from characters, not words.** 242 clauses at rate 0: 0.047 s per character plus 0.40 s, residual ±0.13 s, against ±0.29 s for words at 3 per second. "For mid-sized companies" is three words and 1.56 s. An overflow is what makes a clean run miss its deadlines: audio was ready 2 s early and still had to wait for the previous clause to end.

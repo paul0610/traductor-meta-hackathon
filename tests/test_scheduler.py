@@ -95,14 +95,37 @@ def test_d_positive_late_chunk_plays_on_arrival_with_positive_sync_err():
     assert c.sync_err_s == pytest.approx(0.5)
 
 
-def test_d_positive_missing_seq_skipped_one_second_after_deadline():
+def test_d_positive_a_clause_past_its_deadline_is_still_waited_for():
+    """A late clause plays late: only a stage that never answered, a bug, gets skipped."""
     s, sink, _ = make(delay=5.5)
     s.expect(0, "out:s:0", t_commit=12.0, t_src_start=10.0)
     s.submit(chunk(1, s, t_src_start=11.0))
-    assert s.step(15.0) == pytest.approx(15.5 + SKIP_GRACE_S)
-    s.step(16.5)
+    horizon = 12.0 + MT_TIMEOUT_S + TTS_TIMEOUT_S + SKIP_GRACE_S
+    assert s.step(15.0) == pytest.approx(horizon)
+    s.submit(chunk(0, s, t_src_start=10.0))        # 2.5 s past its deadline
+    s.step(18.0)
+    assert sink.played == [(0, 18.0)]
+    assert s.seq_skipped == 0
+
+
+def test_d_positive_a_seq_that_never_answers_is_skipped_after_both_timeouts():
+    s, sink, _ = make(delay=5.5)
+    s.expect(0, "out:s:0", t_commit=12.0, t_src_start=10.0)
+    s.submit(chunk(1, s, t_src_start=11.0))
+    horizon = 12.0 + MT_TIMEOUT_S + TTS_TIMEOUT_S + SKIP_GRACE_S
+    s.step(horizon)
     assert s.seq_skipped == 1
-    assert sink.played == [(1, 16.5)]
+    assert sink.played == [(1, horizon)]
+
+
+def test_lateness_follows_what_still_plays_before_the_clause():
+    s, sink, _ = make(delay=5.0)
+    s.submit(chunk(0, s, t_src_start=0.0, dur=2.0))
+    s.step(5.0)                                     # plays 5.0 to 7.0
+    s.submit(chunk(1, s, t_src_start=1.0, dur=1.0))  # due 6.0, starts at 7.0, ends 8.0
+    assert s.lateness(7.5, 5.5) == pytest.approx(0.5)
+    assert s.lateness(9.0, 5.5) == pytest.approx(-1.0)
+    assert s.lateness(4.0, 5.5) == pytest.approx(3.0)   # only what comes before it counts
 
 
 def test_cancelled_utterance_is_dropped_and_order_continues():

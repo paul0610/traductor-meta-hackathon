@@ -7,8 +7,10 @@ conjunction, after MAX_WORDS or after MAX_CLAUSE_S of speech; `speechEnd` and
 partial that disagrees only counts as `corrections_blocked`.
 
 `t_src_start` follows SPEC §7.4: the first clause of a turn takes the turn's
-`speechStart`; the next ones take the audio position of the partial that first
-carried their first word, minus one word (`asr_ts` does not exist in realtime).
+`speechStart`; the next ones a line through the audio positions at which the words
+around them first showed up (`asr_ts` does not exist in realtime). One word can
+surface late; a line through its neighbours much less: against the fixture's word
+times, the spread falls from ±0.59 s to ±0.38 s (p95, 157 clauses over 7 runs).
 """
 
 from __future__ import annotations
@@ -17,13 +19,17 @@ import re
 from dataclasses import dataclass, field
 from typing import Callable
 
+import numpy as np
+
 from ..contracts import AsrEvent, AsrKind, Channel, Commit
 from ..metrics.asr_stats import lcp
 
 MIN_WORDS = 3                   # punctuation or a conjunction never cuts a shorter clause
 MAX_WORDS = 8                   # SPEC asks 6 to 10; D's arithmetic asks for the short end
-MAX_CLAUSE_S = 2.0
-WORD_S = 0.3                    # a word has already been spoken when a partial first shows it
+MAX_CLAUSE_S = 1.6              # every 0.4 s here is 0.4 s less of D, with the same translation over 6 runs
+WORD_LAG_S = 0.7                # a word starts this long before a partial first shows it (fixture truth, p50 0.69)
+TO_FIRST_WORD_S = 0.26          # `speechStart` reports a position this long before the first word (truth, p50 0.26)
+WORDS_BEFORE = 6                # how far back the line through the words looks
 CLOSES_CLAUSE = re.compile(r"[,.;:?!…]$")
 CONJUNCTIONS = frozenset({
     "y", "e", "o", "u", "pero", "porque", "aunque", "cuando", "mientras", "entonces", "pues", "si", "como", "donde",
@@ -87,15 +93,24 @@ class Incremental:
             turn.conflict = seen
             self.corrections_blocked += 1
 
-    def _make(self, turn: _Turn, ev: AsrEvent, n: int, boundary: str, t_end: float | None) -> Commit:
+    @staticmethod
+    def _said_at(turn: _Turn, word: int, last: int) -> float:
+        """When `word` started being said, from how the words up to `last` surfaced; past `last`, extrapolated."""
+        lo = max(0, min(word, last) - WORDS_BEFORE)
+        if last <= lo:
+            return turn.first_seen[last] - WORD_LAG_S
+        slope, origin = np.polyfit(np.arange(lo, last + 1), turn.first_seen[lo:last + 1], 1)
+        return float(origin + slope * word) - WORD_LAG_S
+
+    def _make(self, turn: _Turn, ev: AsrEvent, n: int, boundary: str) -> Commit:
         start = len(turn.committed)
         clause = turn.words[start:start + n]
+        last = start + n - 1
         if start == 0 and turn.t_start is not None:
-            t_src_start, source = turn.t_start, "speech_start"
+            t_src_start, source = turn.t_start + TO_FIRST_WORD_S, "speech_start"
         else:
-            t_src_start, source = turn.first_seen[start] - WORD_S, "partial_arrival"
-        if t_end is None:
-            t_end = turn.first_seen[start + n - 1]
+            t_src_start, source = self._said_at(turn, start, last), "partial_arrival"
+        t_end = self._said_at(turn, last + 1, last)
         commit = Commit(
             utterance_id=f"{self.channel.value}:{ev.session_id}:{ev.turn_id}", commit_id=turn.commit_id,
             seq=self.take_seq(), channel=self.channel, text_src=" ".join(clause), prefix_src=" ".join(turn.committed),
@@ -146,11 +161,11 @@ class Incremental:
         if stable <= len(turn.committed):
             return None
         cut = self._cut(turn, stable, t)
-        return None if cut is None else self._make(turn, ev, cut[0], cut[1], None)
+        return None if cut is None else self._make(turn, ev, cut[0], cut[1])
 
     def _flush(self, turn: _Turn, ev: AsrEvent, boundary: str) -> Commit | None:
         n = len(turn.words) - len(turn.committed)
-        return None if n <= 0 else self._make(turn, ev, n, boundary, turn.t_end)
+        return None if n <= 0 else self._make(turn, ev, n, boundary)
 
     def on_event(self, ev: AsrEvent) -> Commit | None:
         if ev.kind not in (AsrKind.SPEECH_START, AsrKind.PARTIAL, AsrKind.SPEECH_END, AsrKind.SPEECH_COMPLETE):

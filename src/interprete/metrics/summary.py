@@ -14,6 +14,8 @@ import numpy as np
 from .jsonl import read
 
 GATE_MAX_S = 4.0
+SYNC_MAX_S = 0.5                # gate S: p95 of |sync_err_s|
+SYNC_LATE_MAX_S = 1.0           # gate S: nothing plays later than this past its deadline
 
 
 def _stats(xs: list[float]) -> dict:
@@ -38,6 +40,19 @@ def _asr(events: list[dict], channel: str) -> dict:
                 reconnects=sum(e.get("kind") == "reconnect" for e in evs),
                 lag_s=_stats([e["lag_s"] for e in partials if e.get("lag_s") is not None]),
                 partial_interval_s=_stats(gaps))
+
+
+def _dub(events: list[dict], out: list[dict]) -> dict | None:
+    run = next((e for e in reversed(events) if e["ev"] == "run"), {})
+    d = run.get("delay_s")
+    if not d:
+        return None
+    errs = [r["t_play_start"] - (r["t_src_start"] + d) for r in out if r.get("t_play_start") is not None]
+    return dict(delay_s=d, voice_under_db=run.get("voice_under_db"), sync_err_s=_stats(errs),
+                sync_err_abs_p95_s=round(float(np.percentile(np.abs(errs), 95)), 3) if errs else None,
+                early_clauses=sum(e < -0.05 for e in errs), late_over_1s=sum(e > SYNC_LATE_MAX_S for e in errs),
+                catch_ups=sum(bool(e.get("catch_up")) for e in events if e["ev"] == "tts"),
+                delay_jumps=run.get("delay_jumps", 0))
 
 
 def summarize(events: list[dict]) -> dict:
@@ -68,6 +83,7 @@ def summarize(events: list[dict]) -> dict:
             boundaries=dict(Counter(e["boundary"] for e in events if e["ev"] == "commit" and e.get("channel") == "out"
                                     and "boundary" in e)),
             f9_latency_s=_stats(f9),
+            dub=_dub(events, out),
             # "tts_idle" only means the next clause is slow: the cable rests, nothing was lost
             watchdog_trips=sum(e.get("what") == "watchdog" and e.get("why") != "tts_idle" for e in events),
             asr=_asr(events, "out"),
@@ -108,6 +124,19 @@ def gate_60s(s: dict) -> list[str]:
         fails.append(f"commit → first PCM mean {c2p['mean']} s > {GATE_MAX_S} s")
     if c2p["p95"] > GATE_MAX_S:
         fails.append(f"commit → first PCM p95 {c2p['p95']} s > {GATE_MAX_S} s")
+    return fails
+
+
+def gate_s(s: dict) -> list[str]:
+    """Failures of gate S on the numbers; its 20 s clip of what the other side sees is judged by eye."""
+    d = s["out"]["dub"]
+    if d is None or not d["sync_err_s"]["n"]:
+        return ["no dubbed clause in this run"]
+    fails = integrity_failures(s)
+    if d["sync_err_abs_p95_s"] > SYNC_MAX_S:
+        fails.append(f"p95 |sync_err| {d['sync_err_abs_p95_s']} s > {SYNC_MAX_S} s")
+    if d["late_over_1s"]:
+        fails.append(f"{d['late_over_1s']} clauses more than {SYNC_LATE_MAX_S} s past their deadline")
     return fails
 
 

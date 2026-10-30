@@ -1,4 +1,4 @@
-"""The interpreter, both directions, consecutive mode.
+"""The interpreter, both directions.
 
 OUT: mic → Muse Voice Transcribe → Muse Spark → Edge TTS → scheduler → CABLE Input (the other side only hears English)
 IN:  system loopback → Muse Voice Transcribe → Muse Spark → subtitle overlay
@@ -7,6 +7,7 @@ IN:  system loopback → Muse Voice Transcribe → Muse Spark → subtitle overl
     uv run python -m interprete.app --record-cable   # also record CABLE Output (what the call app hears)
     uv run python -m interprete.app --wav-out es.wav --wav-in en.wav   # fixtures instead of mic and loopback
     uv run python -m interprete.app --simulate       # no API key: canned commits exercise TTS → cable
+    uv run python -m interprete.app --dub            # synchronized dub: voice and TTS D seconds behind me
 
 F7 initial notice · F8 mute · F9 live voice on/off · F10 physical mic back as Windows default.
 Every mixer transition is a `state` event in the JSONL.
@@ -31,7 +32,9 @@ from .asr.meta_realtime import MetaRealtimeAsr
 from .audio import devices
 from .audio.cable_mixer import CableMixer, State
 from .audio.capture import MicCapture, QueueFeeder, To16k
+from .audio.delay import DelayLine
 from .audio.device_restore import endpoint_volume, restore_mic
+from .audio.fixture import RATE as FIXTURE_RATE
 from .audio.fixture import read_wav, replay
 from .audio.loopback import LoopbackCapture
 from .audio.recorder import Recorder
@@ -45,23 +48,36 @@ from .policy.consecutivo import Consecutive
 from .policy.incremental import Incremental
 from .policy.scheduler import MT_TIMEOUT_S, TTS_TIMEOUT_S, Scheduler
 from .safety import ExitGuard, Watchdog
-from .tts.edge import isochrony_pct
+from .tts.edge import FAST_RATE_PCT, isochrony_pct
 from .tts.edge_session import EdgeVoice
+from .video.virtual_cam import VirtualCam
 
 MT_ERRORS = (TimeoutError, openai.APIError, json.JSONDecodeError, KeyError)
 ASR_FALLBACK_S = 3.0            # ASR down this long: live voice, nothing can be translated
 CABLE_MIN_VOLUME = 0.95
 CATCH_UP_BACKLOG_S = 3.0        # behind by more than this: the next clause is spoken faster
-CATCH_UP_PCT = 10
+CATCH_UP_SYNC_S = 0.5           # with D > 0: the next clause would start this late
+SYNC_LATE_S = 1.0               # three clauses in a row this late: D is too short, the bar says so
+SYNC_LATE_STREAK = 3
 WORKERS = 2                     # concurrent Spark calls and syntheses, outgoing
 POLICIES = {"consecutive": Consecutive, "incremental": Incremental}
 NOTICE_EN = ("Hi, a quick note before we start: I speak Spanish and you are hearing an AI interpreter. "
              "It runs a few seconds behind me, so please give me a moment after you finish speaking.")
+NOTICE_DUB_EN = ("Hi, a quick note before we start: I speak Spanish and you are hearing an AI interpreter. My video "
+                 "reaches you about {n} seconds late so it stays in sync with the voice, so please give me a moment "
+                 "after you finish speaking.")
 SIM_LINES = [
     ("Buenos días, gracias por recibirme.", "Good morning, thanks for having me."),
     ("Tengo cinco años de experiencia en datos.", "I have five years of experience in data."),
     ("¿Podrías repetir la pregunta, por favor?", "Could you repeat the question, please?"),
 ]
+
+
+def dub_delay(args, settings: config.Settings) -> float:
+    """D of this session, fixed until it ends; 0 is no dub."""
+    if args.delay is not None:
+        return args.delay
+    return settings.delay_s if args.dub else 0.0
 
 
 class NoUi:
@@ -81,8 +97,14 @@ class Outgoing:
         self.stop = stop
         self.loop = asyncio.get_running_loop()
         self.mixer = CableMixer(settings.cable_name, emit=self.emit)
-        self.sched = Scheduler(self.mixer, args.delay, emit=self._on_sched)
-        self.voice = EdgeVoice(settings.tts_voice, self.mixer.rate, size=WORKERS, emit=self.emit)
+        self.delay_s = dub_delay(args, settings)
+        self.delay: DelayLine | None = None
+        if self.delay_s > 0:
+            self.delay = DelayLine(self.mixer.rate, self.delay_s)
+            self.mixer.dub(self.delay, settings.voice_under_db)
+        self.rest = self.mixer.rest
+        self.sched = Scheduler(self.mixer, self.delay_s, emit=self._on_sched)
+        self.voice = EdgeVoice(settings.tts_voice, self.mixer.rate, size=WORKERS + 1, emit=self.emit)   # one spare
         self.watchdog = Watchdog(self.mixer, self.sched, emit=self.emit)
         self.mic = MicCapture(settings.mic_name, emit=self.emit)
         self.q_pcm: asyncio.Queue = asyncio.Queue(maxsize=250)
@@ -91,6 +113,11 @@ class Outgoing:
         self.translated: dict[int, tuple[str, str]] = {}
         self.timings: dict[int, dict] = {}
         self.lags: list[float] = []
+        self.sync_err = 0.0
+        self.sync_late = 0                           # clauses in a row later than SYNC_LATE_S
+        self.fixture_start: float | None = None
+        self.video: VirtualCam | None = None
+        self.video_warning = ""
         self.cable_warning = ""
         self.t_start = now()
         self.asr: MetaRealtimeAsr | None = None
@@ -108,11 +135,16 @@ class Outgoing:
         if not self.args.wav_out:
             self.mic.start()
             ring = Ring(self.mixer.rate)
-            if self.mic.rate == self.mixer.rate:
-                self.mic.add_consumer(lambda t, b: ring.write(b))
-            else:                                   # passthrough needs the cable's rate
-                rs = soxr.ResampleStream(self.mic.rate, self.mixer.rate, 1, dtype="float32")
-                self.mic.add_consumer(lambda t, b: ring.write(rs.resample_chunk(b)))
+            rs = None if self.mic.rate == self.mixer.rate else soxr.ResampleStream(self.mic.rate, self.mixer.rate, 1,
+                                                                                   dtype="float32")
+
+            def to_cable(t: float, block: np.ndarray) -> None:      # live voice and the dub need the cable's rate
+                y = block if rs is None else rs.resample_chunk(block)
+                ring.write(y)
+                if self.delay is not None:
+                    self.delay.write(y)
+
+            self.mic.add_consumer(to_cable)
             self.mixer.mic = ring
             if not self.args.simulate:
                 self.mic.add_consumer(QueueFeeder(self.loop, self.q_pcm, To16k(self.mic.rate)))
@@ -122,6 +154,23 @@ class Outgoing:
         print(f"cable {self.mixer.device.name} [{self.mixer.device.hostapi}] {self.mixer.rate} Hz "
               f"{self.mixer.channels} ch, state {self.mixer.state.value}", file=sys.stderr)
         self.check_cable_level()
+        if self.delay_s > 0 and not self.args.wav_out:
+            self.start_video()
+
+    def start_video(self) -> None:
+        """Without the delayed camera the dub still runs, but the lips lead the voice by D, so the bar says so."""
+        video = VirtualCam(self.delay_s + self.settings.av_offset_ms / 1000, lambda: self.mixer.live,
+                           name_sub=self.settings.camera_name, emit=self.emit)
+        try:
+            video.start()
+        except (RuntimeError, OSError) as exc:
+            self.video_warning = " │ SIN CÁMARA RETRASADA"
+            self.emit("video", error=repr(exc)[:300])
+            print(f"AVISO: sin cámara retrasada, el otro lado ve tus labios {self.delay_s:.1f} s antes que la voz. "
+                  f"¿OBS Studio instalado? {exc}", file=sys.stderr)
+            return
+        self.video = video
+        print(f"cámara {self.settings.camera_name} -> OBS Virtual Camera, {video.frames.delay_s:.2f} s tarde", file=sys.stderr)
 
     def check_cable_level(self) -> None:
         """A low Windows slider scales the whole voice before the call app sees it; nothing else would show it."""
@@ -134,12 +183,33 @@ class Outgoing:
             print(f"AVISO: {self.settings.cable_name} está al {vol[0] * 100:.0f} %{' y mudo' if vol[1] else ''} en Windows: "
                   "el otro lado te oirá muy bajo. Súbelo a 100 en Sonido > Salida > CABLE Input.", file=sys.stderr)
 
+    def fixture_tap(self):
+        """The fixture also stands in for the mic on the delay line, so a dub can be judged with no one speaking."""
+        rs = soxr.ResampleStream(FIXTURE_RATE, self.mixer.rate, 1, dtype="float32")
+
+        def tap(t_capture: float, pcm: bytes) -> None:
+            if self.fixture_start is None:
+                self.fixture_start = t_capture
+                self.emit("state", what="fixture_start", t_start=t_capture)
+            if self.delay is not None:
+                self.delay.write(rs.resample_chunk(np.frombuffer(pcm, "<i2").astype(np.float32) / 32768.0))
+
+        return tap
+
     def _on_sched(self, ev: str, **f) -> None:
         self.emit(ev, **f)
         row = self.timings.get(f.get("seq"))
         if row is not None and f.get("t_play_start") is not None:
             row["t_play_start"] = f["t_play_start"]
-            self.lags.append(f["t_play_start"] - row["t_commit"])
+            # with a dub every clause waits for its deadline on purpose: the lag worth showing is the pipeline's
+            self.lags.append((f["t_tts_first"] if self.delay_s > 0 else f["t_play_start"]) - row["t_commit"])
+            self.note_sync(f["sync_err_s"])
+
+    def note_sync(self, err: float) -> None:
+        self.sync_err = err
+        self.sync_late = self.sync_late + 1 if err > SYNC_LATE_S else 0
+        if self.delay_s > 0 and self.sync_late == SYNC_LATE_STREAK:
+            self.emit("state", what="sync_late", sync_err_s=err, delay_s=self.delay_s)
 
     def idle(self) -> bool:
         return self.sched.in_flight() == 0 and not self.mixer.busy()
@@ -207,9 +277,9 @@ class Outgoing:
             def on_hedge() -> None:
                 self.emit("tts", channel="out", seq=c.seq, utterance_id=c.utterance_id, hedged=True)
 
-            catch_up = self.sched.backlog_s(now()) > CATCH_UP_BACKLOG_S
+            catch_up = self.behind(c, now())
             src_s = None if c.t_src_end is None else c.t_src_end - c.t_src_start
-            rate_pct = max(isochrony_pct(c.text_tgt, src_s), CATCH_UP_PCT if catch_up else 0)
+            rate_pct = FAST_RATE_PCT if catch_up else isochrony_pct(c.text_tgt, src_s)
             try:
                 r = await asyncio.wait_for(self.voice.say(c.text_tgt, rate_pct=rate_pct, on_hedge=on_hedge), TTS_TIMEOUT_S)
             except Exception as exc:                 # network, decode, timeout: never stall the queue
@@ -234,17 +304,27 @@ class Outgoing:
                       rate_pct=rate_pct, stretch_ratio=chunk.stretch_ratio, backlog_s=self.sched.backlog_s(now()))
             self.sched.submit(chunk)
 
+    def behind(self, c: Commit, t: float) -> bool:
+        if self.delay_s > 0:
+            return self.sched.lateness(self.sched.deadline_for(c.t_src_start), t) > CATCH_UP_SYNC_S
+        return self.sched.backlog_s(t) > CATCH_UP_BACKLOG_S
+
     def fallback(self, t: float) -> None:
         """ASR down for a while: nothing can be translated, so the other side at least hears me."""
         down = self.asr is not None and self.asr.t_down is not None and t - self.asr.t_down > ASR_FALLBACK_S
-        rest = State.PASSTHROUGH if down else State.SILENT
+        rest = State.PASSTHROUGH if down else self.rest
         if rest != self.mixer.rest:
             self.mixer.set_rest(rest)
 
     def bar_text(self, t: float) -> str:
         lag = f"{self.lags[-1]:.1f}s p95 {np.percentile(self.lags, 95):.1f}s" if self.lags else "--"
         link = " │ ASR CAÍDO" if self.asr is not None and self.asr.t_down is not None else ""
-        return (f"LAG {lag} │ CORR 0 │ ES→EN {self.mixer.state.value}{link}{self.cable_warning}"
+        sync = ""
+        if self.delay_s > 0:
+            sync = f" │ SYNC {self.sync_err:+.1f}s (D {self.delay_s:.1f}s)"
+            if self.sync_late >= SYNC_LATE_STREAK:
+                sync += f" TARDE: reinicia con D {self.delay_s + 0.5:.1f}"
+        return (f"LAG {lag}{sync} │ CORR 0 │ ES→EN {self.mixer.state.value}{link}{self.cable_warning}{self.video_warning}"
                 f" │ META {(t - self.t_start) / 60:.0f} min")
 
     async def controller(self) -> None:
@@ -265,9 +345,11 @@ class Outgoing:
             return
         t = now()
         seq = self.policy.take_seq()
+        text = NOTICE_DUB_EN.format(n=round(self.delay_s)) if self.delay_s > 0 else NOTICE_EN
         self.submit_commit(Commit(utterance_id=f"out:notice:{seq}", commit_id=0, seq=seq, channel=Channel.OUT,
-                                  text_src="(aviso inicial)", prefix_src="", boundary="notice", t_src_start=t,
-                                  t_src_end=None, t_src_source="notice", t_commit=t, text_tgt=NOTICE_EN))
+                                  text_src="(aviso inicial)", prefix_src="", boundary="notice",
+                                  t_src_start=t - self.delay_s, t_src_end=None, t_src_source="notice", t_commit=t,
+                                  text_tgt=text))
         self.emit("state", what="notice", seq=seq)
 
     async def simulate(self, on_f9) -> None:
@@ -287,7 +369,7 @@ class Outgoing:
                        t_src_source="simulated", t_commit=t,
                        text_tgt="This sentence is long on purpose so the kill switch interrupts it halfway through.")
             self.submit_commit(c)
-            while self.mixer.state.value != "TTS":
+            while not self.mixer.busy():
                 await asyncio.sleep(0.01)
             await asyncio.sleep(1.0)
             on_f9()
@@ -306,6 +388,8 @@ class Outgoing:
 
     async def close(self) -> None:
         await self.voice.close()
+        if self.video is not None:
+            await asyncio.to_thread(self.video.stop)
         self.mixer.stop()
         self.mic.stop()
 
@@ -315,6 +399,8 @@ class Outgoing:
                 self.emit("commit", phase="report", channel="out", **r)
         self.emit("run", seq_skipped=self.sched.seq_skipped, cable_gaps=self.mixer.cable_gaps,
                   watchdog_trips=self.watchdog.trips, mode=self.args.mode, tts_reconnects=self.voice.reconnects,
+                  delay_s=self.delay_s, voice_under_db=self.settings.voice_under_db if self.delay_s > 0 else None,
+                  delay_jumps=self.delay.jumps if self.delay is not None else 0,
                   corrections_blocked=self.policy.corrections_blocked if self.policy is not None else 0)
 
 
@@ -483,7 +569,7 @@ class App:
     async def fixtures(self) -> None:
         jobs = []
         if self.out is not None and self.args.wav_out:
-            jobs.append(replay(read_wav(self.args.wav_out), self.out.q_pcm, self.stop))
+            jobs.append(replay(read_wav(self.args.wav_out), self.out.q_pcm, self.stop, self.out.fixture_tap()))
         if self.inc is not None and self.args.wav_in:
             jobs.append(replay(read_wav(self.args.wav_in), self.inc.q_pcm, self.stop))
         await asyncio.gather(*jobs)
@@ -549,6 +635,7 @@ async def run_app(args, ui) -> None:
         app.report()
         if rec:
             path = rec.save(Path("logs") / f"cable_app_{stamp}.wav")
+            metrics.emit("state", what="cable_recording", path=str(path), t_start=rec.signal()[0])
             print(f"cable recording: {path}")
         metrics.close()
     print(json.dumps(summarize(read(metrics.path)), indent=2, ensure_ascii=False))
@@ -561,7 +648,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     ap.add_argument("--sim-f9", action="store_true", help="with --simulate: press F9 programmatically mid-chunk")
     ap.add_argument("--record-cable", action="store_true", help="record CABLE Output to logs/")
     ap.add_argument("--seconds", type=float, default=None)
-    ap.add_argument("--delay", type=float, default=0.0, help="D in seconds (0 this week until piece 10)")
+    ap.add_argument("--dub", action="store_true", default=config.load().dub,
+                    help="synchronized dub with D = RTT_DELAY_S; only makes sense with the delayed camera")
+    ap.add_argument("--delay", type=float, default=None, help="D in seconds, fixed for the session; 0 turns the dub off")
     ap.add_argument("--mode", choices=sorted(POLICIES), default=config.load().mode,
                     help="incremental: clause by clause; consecutive: whole turns")
     ap.add_argument("--out-only", action="store_true", help="no incoming chain")

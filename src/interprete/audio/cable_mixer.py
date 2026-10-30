@@ -1,12 +1,13 @@
 """Outgoing mixer: writes the virtual microphone (`CABLE Input`) from one output callback (SPEC §7.6).
 
-States this week: OFF, SILENT (the rest state: the other side only ever hears
-English, so raw Spanish stays off the cable), TTS (translated voice), PASSTHROUGH
-(live voice, only by F9 or as the fallback while the ASR is down), MUTE. DUB
-(piece 10) plugs in here later. The TTS takes the cable at the exact sample its
-first chunk starts. Going back to rest is decided outside the callback
-(`release_if_idle`), because it needs to know whether the scheduler still has
-work in flight.
+States: OFF, SILENT (the rest state: the other side only ever hears English, so
+raw Spanish stays off the cable), TTS (translated voice), PASSTHROUGH (live voice,
+only by F9 or as the fallback while the ASR is down), MUTE, and DUB (D > 0, the
+rest state of a dub: my voice D seconds late, attenuated, with the TTS on top at
+its deadlines; it never leaves on its own between clauses, or the voice would run
+ahead of its video). The TTS takes the cable at the exact sample its first chunk
+starts. Going back to rest is decided outside the callback (`release_if_idle`),
+because it needs to know whether the scheduler still has work in flight.
 
 The endpoint is opened with its real channel count (VB-CABLE: 2) and the mono
 mix goes to every channel, so nothing depends on how Windows would upmix mono.
@@ -28,6 +29,7 @@ import sounddevice as sd
 from ..clock import now
 from ..contracts import PcmChunk
 from . import devices
+from .delay import DelayLine
 from .ring import Ring
 
 RELEASE_AFTER_S = 0.30          # TTS → rest once idle this long with nothing in flight
@@ -39,6 +41,7 @@ class State(str, Enum):
     SILENT = "SILENT"
     PASSTHROUGH = "PASSTHROUGH"
     TTS = "TTS"
+    DUB = "DUB"
     MUTE = "MUTE"
 
 
@@ -59,6 +62,8 @@ class CableMixer:
         self.channels = min(2, self.device.max_output_channels)
         self.block = int(self.rate * block_ms / 1000)
         self.mic = mic
+        self.delay: DelayLine | None = None              # D > 0 only
+        self.under_gain = 0.0
         self.rest = rest
         self.latched = False                             # F9: live voice until the next F9
         self._emit = emit or (lambda ev, **f: None)
@@ -87,6 +92,12 @@ class CableMixer:
         self._stream.start()
         self.t_callback = now()
 
+    def dub(self, delay: DelayLine, under_db: float) -> None:
+        """Before `start`: rest in DUB; `under_db` = -inf keeps my voice off the cable."""
+        self.delay = delay
+        self.under_gain = 10 ** (under_db / 20)
+        self.rest = State.DUB
+
     def start(self) -> None:
         self._open()
         self._set_state(self.rest, "start")
@@ -109,6 +120,11 @@ class CableMixer:
     @property
     def state(self) -> State:
         return self._state
+
+    @property
+    def live(self) -> bool:
+        """The other side is getting my live voice: the delayed video has to jump with it."""
+        return self.latched or self.rest == State.PASSTHROUGH
 
     @property
     def output_latency_s(self) -> float:
@@ -175,6 +191,8 @@ class CableMixer:
     def _set_state(self, to: State, why: str) -> None:
         frm, self._state = self._state, to
         if frm != to:
+            if to == State.DUB and frm != State.MUTE and self.delay is not None:
+                self.delay.clear()                       # what it holds was heard live: never twice
             self._emit("state", frm=frm.value, to=to.value, why=why)
 
     # --- audio thread ------------------------------------------------------------------
@@ -201,6 +219,7 @@ class CableMixer:
             self._cur = None
             self.tts_idle_since = t_cb
         mic = self._read_mic(frames)          # always drained, so live voice stays current
+        delayed = None if self.delay is None else self.delay.read(frames)
         state0 = self._state
         outdata.fill(0.0)
         out = outdata[:, 0]
@@ -250,6 +269,8 @@ class CableMixer:
 
         if state0 == State.PASSTHROUGH and mic is not None:
             out[:tts_from] = mic[:tts_from]
+        elif state0 == State.DUB and delayed is not None:
+            out += self.under_gain * delayed
         if self._kill_t is not None and state0 == State.PASSTHROUGH:
             # F9 budget is < 200 ms from key to the first live-voice block written
             self._emit("state", what="f9_effective", f9_latency_s=t_cb - self._kill_t)

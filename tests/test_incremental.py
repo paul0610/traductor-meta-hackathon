@@ -1,6 +1,6 @@
 from interprete.clock import StreamClock
 from interprete.contracts import AsrEvent, AsrKind, Channel
-from interprete.policy.incremental import MAX_CLAUSE_S, MAX_WORDS, WORD_S, Incremental
+from interprete.policy.incremental import MAX_CLAUSE_S, MAX_WORDS, TO_FIRST_WORD_S, WORD_LAG_S, Incremental
 
 
 class Script:
@@ -98,7 +98,7 @@ def test_a_forced_cut_backs_up_so_noun_and_adjective_stay_together():
 def test_a_forced_cut_with_no_opener_takes_everything():
     s = Script()
     s.start()
-    s.grow("esto lo digo muy muy despacio", step=MAX_CLAUSE_S / 3)
+    s.grow("esto lo digo muy muy despacio", step=MAX_CLAUSE_S / 3 + 0.01)
     assert s.commits[0].text_src == "esto lo digo"
 
 
@@ -152,16 +152,32 @@ def test_commits_chain_in_order_with_prefix_and_ids():
     assert s.commits[1].prefix_src == s.commits[0].text_src
 
 
-def test_first_clause_starts_at_speech_start_later_ones_at_their_first_partial():
+def test_first_clause_starts_at_speech_start_later_ones_on_the_line_through_their_words():
     s = Script()
     s.start()
     s.grow("Terminé el reporte ayer pero nadie lo leyó", step=0.4)
     s.send(AsrKind.SPEECH_END)
-    assert s.commits[0].t_src_start == 101.0
+    assert abs(s.commits[0].t_src_start - (101.0 + TO_FIRST_WORD_S)) < 1e-9
     assert s.commits[0].t_src_source == "speech_start"
-    # "pero" first showed up in the 5th partial, audio position 1.0 + 4 × 0.4
-    assert abs(s.commits[1].t_src_start - (100.0 + 1.0 + 4 * 0.4 - WORD_S)) < 1e-9
+    # "pero" first showed up in the 5th partial, audio position 1.0 + 4 × 0.4; evenly spaced words: right on the line
+    assert abs(s.commits[1].t_src_start - (100.0 + 1.0 + 4 * 0.4 - WORD_LAG_S)) < 1e-9
     assert s.commits[1].t_src_source == "partial_arrival"
+    # a clause ends where the next word would start
+    assert abs(s.commits[1].t_src_end - (100.0 + 1.0 + 8 * 0.4 - WORD_LAG_S)) < 1e-9
+
+
+def test_a_word_that_surfaces_late_is_pulled_back_by_its_neighbours():
+    s = Script()
+    s.start()
+    words = "Terminé el reporte ayer pero nadie lo leyó".split()
+    for i in range(1, 5):
+        s.partials(" ".join(words[:i]), step=0.3)
+    s.t += 0.9                                       # "pero" reaches a partial long after it was said
+    first_carried_at = s.t
+    s.partials(*(" ".join(words[:i]) for i in range(5, 9)), step=0.1)
+    s.send(AsrKind.SPEECH_END)
+    assert s.commits[1].text_src.startswith("pero")
+    assert s.commits[1].t_src_start < 100.0 + first_carried_at - WORD_LAG_S - 0.2
 
 
 def test_empty_turn_is_nothing():

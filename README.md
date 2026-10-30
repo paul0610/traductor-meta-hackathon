@@ -18,7 +18,7 @@ Work in progress during the hackathon week. Daily logs with measured numbers liv
 | Incoming chain: loopback → ASR → Spark → subtitles | done, measured on real system audio |
 | Safety: silent rest state, F9 latch, F10 via Core Audio, watchdog, restore on exit | done, physical keys pending |
 | Incremental clause commits (LA-2), both directions | done, measured on synthetic voices |
-| Synchronized dub with fixed delay D | planned |
+| Synchronized dub with fixed delay D | audio done and measured on synthetic voices; delayed camera written, its OBS driver not yet installed |
 
 ## How it works (short)
 
@@ -53,7 +53,9 @@ Before a call, `uv run python scripts/warmcheck.py` tests everything a call need
 | F9 | Your raw voice on the cable, latched; F9 again to interpret again |
 | F10 | F9, plus the physical mic back as the Windows default |
 
-To check it without speaking: `uv run python scripts/make_fixtures.py`, then `uv run python scripts/gate_60s.py --fixtures` runs both chains on synthetic voices and judges the run from its log.
+To check it without speaking: `uv run python scripts/make_fixtures.py`, then `uv run python scripts/gate_60s.py --fixtures` runs both chains on synthetic voices and judges the run from its log. `uv run python scripts/gate_sync.py` does the same for the dub, and also compares each clause's timing against the real word times of the fixture.
+
+**Synchronized dub** (`RTT_DUB=1` or `--dub`): the other side gets my video and voice D seconds late, so the English voice starts and stops with my lips. Needs OBS Studio installed once for its virtual camera driver; OBS itself stays closed. Pick `OBS Virtual Camera` in the call. The self-view shows the delayed video, and with a shared screen the cursor runs D seconds ahead of the voice, so turn the dub off to share.
 
 Dependencies are pinned exactly and locked (`uv.lock`), resolved with a supply-chain cooldown (`exclude-newer = "2026-10-22"`).
 

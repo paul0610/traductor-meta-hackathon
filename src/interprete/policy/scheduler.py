@@ -20,7 +20,7 @@ from ..clock import now as clock_now
 from ..contracts import PcmChunk
 
 MT_TIMEOUT_S = 4.0
-TTS_TIMEOUT_S = 4.0
+TTS_TIMEOUT_S = 6.0            # a late clause costs a moment of sync, a lost one costs the sentence
 SKIP_GRACE_S = 1.0            # a missing seq without tombstone is skipped this long after its horizon
 HANDOFF_LEAD_S = 0.10         # hand a chunk to the mixer this early; the mixer starts it at start_at
 
@@ -140,16 +140,22 @@ class Scheduler:
         queued = max(0.0, self._prev_end - now)
         return queued + sum(c.duration_s for c in self._ready.values())
 
+    def lateness(self, deadline: float, now: float) -> float:
+        """How late a chunk due at `deadline` would start, given what still has to play before it."""
+        t = max(now, self._prev_end)
+        for _, c in sorted(self._ready.items()):
+            if c.deadline < deadline:
+                t = max(t, c.deadline) + c.duration_s
+        return t - deadline
+
     # --- decision logic -----------------------------------------------------------
 
     def _skip_horizon(self, seq: int, now: float) -> float | None:
         """When a missing seq (no chunk, no tombstone) may be skipped; None = wait for an event."""
         exp = self._expected.get(seq)
         if exp is not None:
-            if self.delay_s > 0:
-                return exp.deadline + SKIP_GRACE_S
-            # D = 0: the deadline is already past at birth; give MT and TTS their full timeouts first.
-            return exp.t_commit + MT_TIMEOUT_S + TTS_TIMEOUT_S + SKIP_GRACE_S
+            # both stages answer within their timeouts, so this only fires on a bug: a late clause still plays
+            return max(exp.deadline, exp.t_commit + MT_TIMEOUT_S + TTS_TIMEOUT_S) + SKIP_GRACE_S
         later_known = any(s > seq for s in self._ready) or any(s > seq for s in self._tombs)
         if not later_known:
             return None

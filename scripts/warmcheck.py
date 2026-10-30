@@ -24,6 +24,7 @@ from interprete.audio import devices
 from interprete.audio.device_restore import endpoint_volume
 from interprete.mt.spark import Spark
 from interprete.tts.edge import synthesize
+from interprete.video.virtual_cam import HEIGHT, WIDTH, measure_webcam, open_virtual_camera
 
 HEADPHONE_HINTS = ("auricular", "headphone", "headset", "bose", "airpods", "buds", "audífono", "audifono", "manos libres")
 failures = 0
@@ -82,6 +83,20 @@ def check_decoder() -> None:
     report("OK" if (major, minor) >= (1, 1) else "FALLA", "libsndfile (decodifica el MP3 de Edge)", version)
 
 
+def check_camera(s: config.Settings) -> None:
+    """Only with RTT_DUB=1: opens the webcam and the driver for a moment, keeps nothing."""
+    try:
+        fps = measure_webcam(s.camera_name)
+        report("OK" if fps >= 24 else "AVISO", "webcam", f"{s.camera_name}, {fps:.0f} fps a {WIDTH}x{HEIGHT}")
+    except (RuntimeError, OSError) as exc:
+        report("FALLA", "webcam", str(exc))
+    try:
+        open_virtual_camera().close()
+        report("OK", "cámara virtual", "driver de OBS disponible; elige OBS Virtual Camera en la llamada")
+    except RuntimeError as exc:
+        report("FALLA", "cámara virtual", f"{exc}. Instala OBS Studio una vez: winget install OBSProject.OBSStudio")
+
+
 async def check_tts(s: config.Settings) -> None:
     try:
         r = await asyncio.wait_for(synthesize("Testing the voice.", s.tts_voice, 48000), 6.0)
@@ -114,6 +129,8 @@ async def main() -> int:
     s = config.load()
     check_devices(s)
     check_decoder()
+    if s.dub:
+        check_camera(s)
     await check_tts(s)
     if s.api_key:
         report("OK", "MODEL_API_KEY")
