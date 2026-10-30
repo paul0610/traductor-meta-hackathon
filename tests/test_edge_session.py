@@ -103,17 +103,30 @@ def test_rate_reaches_the_socket(monkeypatch):
     assert FakeSocket.made[0].turns == [("hi", 25)]
 
 
-def test_a_failed_turn_falls_back_and_the_socket_is_replaced(monkeypatch):
+def test_a_failed_turn_is_rescued_and_the_socket_is_replaced(monkeypatch):
     async def main():
         v = EdgeVoice("v", 48000, size=1, make_socket=FakeSocket)
         await v.start()
-        assert await v.say("one") == "one shot"
+        assert await v.say("one") in ("one shot", "over the socket")
         await asyncio.sleep(0.01)
         assert await v.say("two") == "over the socket"
         await v.close()
 
     run(main, monkeypatch, [ConnectionError("gone")])
     assert FakeSocket.made[0].opens == 2
+
+
+def test_the_one_shot_saves_a_clause_when_the_spare_fails_too(monkeypatch):
+    async def main():
+        v = EdgeVoice("v", 48000, size=2, make_socket=FakeSocket)
+        await v.start()
+        await asyncio.sleep(0.001)
+        assert await v.say("twice unlucky") == "one shot"
+        await asyncio.sleep(0.01)
+        await v.close()
+
+    run(main, monkeypatch, [ConnectionError("closed"), ConnectionError("closed")])
+    assert sum(s.opens for s in FakeSocket.made) == 4    # both replaced
 
 
 def test_a_stalled_socket_loses_the_race_and_is_not_reused(monkeypatch):
@@ -126,6 +139,36 @@ def test_a_stalled_socket_loses_the_race_and_is_not_reused(monkeypatch):
 
     run(main, monkeypatch, [5.0])
     assert FakeSocket.made[0].opens == 2
+
+
+def test_a_clause_keeps_trying_while_edge_refuses_everything(monkeypatch):
+    async def no(*a, **k):
+        raise ConnectionError("closed")
+
+    async def main():
+        monkeypatch.setattr(edge_session, "synthesize", no)
+        monkeypatch.setattr(edge_session, "RETRY_S", 0.001)
+        v = EdgeVoice("v", 48000, size=2, make_socket=FakeSocket)
+        await v.start()
+        await asyncio.sleep(0.001)
+        assert await v.say("persistent") == "over the socket"
+        await v.close()
+
+    run(main, monkeypatch, [ConnectionError("closed")] * 5)
+
+
+def test_a_stalled_turn_goes_to_the_spare_socket_before_any_new_connection(monkeypatch):
+    async def main():
+        v = EdgeVoice("v", 48000, size=2, make_socket=FakeSocket)
+        await v.start()
+        await asyncio.sleep(0.001)
+        assert await v.say("slow") == "over the socket"
+        await asyncio.sleep(0.01)
+        await v.close()
+
+    run(main, monkeypatch, [5.0])
+    assert sum(len(s.turns) for s in FakeSocket.made) == 2
+    assert sum(s.opens for s in FakeSocket.made) == 3    # the stalled one is replaced
 
 
 def test_a_socket_dropped_while_idle_reopens_on_use(monkeypatch):

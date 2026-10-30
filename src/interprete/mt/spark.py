@@ -29,7 +29,9 @@ SYSTEM = (
 FRAGMENT = (
     " You receive the speech clause by clause as it is said. Translate only the new fragment so it continues "
     "what you already interpreted: never repeat it, never complete the sentence, and add no final period "
-    "unless the fragment ends with one."
+    "unless the fragment ends with one. A fragment without a final period may stop in the middle of a phrase and go "
+    "on in the next one, so read it as the start of something longer: \"Tengo cinco años\" may go on \"de experiencia\", "
+    "so it is \"I have five years\", not an age."
 )
 
 SCHEMA = {

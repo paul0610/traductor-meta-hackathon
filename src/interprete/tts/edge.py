@@ -20,8 +20,11 @@ from ..clock import now
 
 TRIM_THRESHOLD_DB = -50.0      # peak level per 5 ms window below which audio counts as silence
 TRIM_MARGIN_S = 0.060
-WORDS_PER_S = 3.0              # en-US-GuyNeural at rate 0: p50 3.0-3.2 over 53 clauses, 30/10
-MAX_RATE_UP = 0.25
+S_PER_CHAR = 0.047             # en-US-GuyNeural at rate 0, 242 clauses: length in characters predicts the duration
+S_PER_CLAUSE = 0.40            # twice as well as words (±0.13 s against ±0.29 s): "for mid-sized companies" is 3 words
+ISOCHRONY_EXCESS = 0.10        # this much longer than its slot: an overflow delays every clause behind it
+MIN_SRC_S = 0.6
+FAST_RATE_PCT = 25             # Edge answers +0 % and +25 % at once; values between stall it (SPEC §9), so only these two
 
 
 @dataclass(slots=True)
@@ -99,9 +102,9 @@ def isochrony_pct(text: str, src_s: float | None) -> int:
 
     Only ever faster: slower would add lag at D = 0, and the capped case still
     leaves the voice intelligible. A clause cut short by the ASR can look tiny,
-    so `src_s` is floored at the length a person needs to say one short word.
+    so `src_s` is floored at the length of one short word in the voice.
     """
     if src_s is None:
         return 0
-    expected_s = len(text.split()) / WORDS_PER_S
-    return int(min(max(expected_s / max(src_s, 0.3) - 1.0, 0.0), MAX_RATE_UP) * 100)
+    expected_s = S_PER_CHAR * len(text) + S_PER_CLAUSE
+    return FAST_RATE_PCT if expected_s / max(src_s, MIN_SRC_S) - 1.0 >= ISOCHRONY_EXCESS else 0

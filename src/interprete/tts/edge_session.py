@@ -8,8 +8,9 @@ over an open socket gives first audio in 0.43 s. Measured 30/10, SPEC §8.
 Speaks the same wire protocol as `edge_tts` and reuses its helpers; only the
 connection's lifetime changes. Anything that goes wrong on a socket closes it,
 because a turn cut halfway cannot be reused, and a fresh one opens in the
-background. A clause that a socket does not answer in time races a one-shot
-`synthesize`, so a clause never depends on a single connection.
+background. A clause that a socket does not answer in time races the spare socket
+and a one-shot `synthesize` together, so a clause never depends on one connection:
+on a bad afternoon Edge stalls a turn, closes it at 2.5 s, and may do it twice in a row.
 """
 
 from __future__ import annotations
@@ -36,8 +37,9 @@ from ..clock import now
 from ..hedge import hedged
 from .edge import TtsResult, finish, synthesize
 
-HEDGE_AFTER_S = 1.5             # a healthy socket answers a whole clause in 1 s at worst
+HEDGE_AFTER_S = 1.2             # a healthy socket answers a whole clause in 1 s at worst
 RECONNECT_S = 2.0
+RETRY_S = 0.05
 KEEPALIVE_S = 10.0              # an idle socket dies within 60 s; a WS ping does not stop it, a resent config does
 AUDIO_CONFIG = (
     "X-Timestamp:{ts}\r\nContent-Type:application/json; charset=utf-8\r\nPath:speech.config\r\n\r\n"
@@ -160,7 +162,20 @@ class EdgeVoice:
                 await asyncio.sleep(RECONNECT_S)
 
     async def _over_socket(self, text: str, rate_pct: int) -> TtsResult:
-        sock = await self._free.get()
+        return await self._turn(await self._free.get(), text, rate_pct)
+
+    async def _rescue(self, text: str, rate_pct: int) -> TtsResult:
+        """A stalled clause: the spare socket answers in 0.3 s, a new connection in over 1 s but on its own luck."""
+        def one_shot():
+            return synthesize(text, self.voice, self.out_rate, rate_pct=rate_pct)
+
+        try:
+            sock = self._free.get_nowait()
+        except asyncio.QueueEmpty:
+            return await one_shot()
+        return await hedged(lambda: self._turn(sock, text, rate_pct), one_shot, 0.0)
+
+    async def _turn(self, sock: Socket, text: str, rate_pct: int) -> TtsResult:
         t_request = now()
         try:
             if sock.closed:                          # the server dropped it while idle
@@ -175,6 +190,11 @@ class EdgeVoice:
         return await finish(mp3, self.out_rate, t_request, t_first, t_end)
 
     async def say(self, text: str, *, rate_pct: int = 0, on_hedge: Callable[[], None] | None = None) -> TtsResult:
-        return await hedged(lambda: self._over_socket(text, rate_pct),
-                            lambda: synthesize(text, self.voice, self.out_rate, rate_pct=rate_pct),
-                            HEDGE_AFTER_S, on_hedge)
+        """Keeps trying until the caller's timeout gives up: Edge can refuse everything for seconds and come back."""
+        while True:
+            try:
+                return await hedged(lambda: self._over_socket(text, rate_pct),
+                                    lambda: self._rescue(text, rate_pct), HEDGE_AFTER_S, on_hedge)
+            except Exception as exc:
+                self._emit("tts", socket_error=repr(exc)[:200])
+                await asyncio.sleep(RETRY_S)
