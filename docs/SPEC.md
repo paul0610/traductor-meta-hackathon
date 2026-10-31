@@ -15,7 +15,7 @@ Two independent chains, one per direction. Neither touches the video-call app: i
 - Audio for the ASR is mono PCM16 at 16 kHz (24 kHz is the engine-native rate and also accepted). The incoming chain never changes audio devices.
 
 ```
-OUT: mic ─► capture ─► ASR(es) ─► policy ─► Spark(es→en) ─► Edge TTS ─► scheduler ─► mixer ─► CABLE Input ─► (call app mic = CABLE Output)
+OUT: mic ─► capture ─► ASR(es) ─► policy ─► Spark(es→en) ─► Pocket TTS ─► scheduler ─► mixer ─► CABLE Input ─► (call app mic = CABLE Output)
 IN:  loopback ─► capture ─► ASR(en) ─► policy ─► Spark(en→es) ─► overlay
 ```
 
@@ -154,7 +154,7 @@ One `asyncio.TaskGroup` per channel plus a shared one. `sounddevice` callbacks a
 | `asr_recv[c]` | WS (text) | `q_events[c]`, `q_metrics` | normalize to `AsrEvent`; keep the clock mapping | ASR `error` is logged and treated as a cut |
 | `policy[c]` | `q_events[c]` | `q_commits[c]` | consecutive: one `Commit` per `speechComplete`; incremental: LA-2 over cumulative partials; derive `t_src_start` (§7.4); at most one speculation task in flight | committed text untouched; late correction → `corrections_blocked += 1` |
 | `mt[c]` (two at a time on `out`) | `q_commits[c]` | `q_translated[c]`, `q_metrics` | Spark with `prefix_src`, the last N commits of both channels and the glossary; structured output; minimum reasoning | 4 s timeout → **tombstone** to the scheduler, counted; overlay shows source text in grey; never waits unbounded |
-| `tts[out]` | `q_translated[out]` | `scheduler.submit()` | Edge TTS streaming → PCM at cable rate → trim silences → `rate` from word count and `t_src_end − t_src_start` (isochrony) → `PcmChunk`; runs ahead of playback, so pre-synthesis comes for free | keeps trying for 6 s, then tombstone, counted |
+| `tts[out]` | `q_translated[out]` | `scheduler.submit()` | Pocket TTS, with Edge taking a clause it fails or holds 3 s (§10) → PCM at cable rate → trim silences → `rate` from characters and `t_src_end − t_src_start` (isochrony) → `PcmChunk`; runs ahead of playback, so pre-synthesis comes for free | keeps trying for 6 s, then tombstone, counted |
 | `overlay[in]` | `q_translated[in]` | UI | EN/ES subtitles; backchannels as text only | — |
 | `scheduler` (one per output; only `out` this week) | heap by `seq` + tombstones | mixer ring, `q_metrics` | see §7.5.1 | F9 empties heap and ring |
 | `mixer` (output callback, `CABLE Input`) | TTS ring, delayed-voice ring, live mic ring | cable | sums by state (§7.6) | underrun → zeros, `cable_gaps += 1`; never blocks |
@@ -211,7 +211,8 @@ The delay line (`audio/delay.py`) is written by the mic callback and read by the
   - **No endpointing sensitivity / minimum-silence / VAD parameter** appears in the docs pages, the API reference page or the cookbook's protocol module. *[not verified in the full schema page, which was not reachable; treated as non-existent]* Consequence: the delay of `speechComplete` after a pause is the server's, and is measured (§4 `endpoint_delay_s`), not tuned.
   - Binary frames = raw PCM16 mono. The backend processes 80 ms chunks; frame size carries no meaning, smaller frames lower latency.
   - Close codes: `1008` (no handshake in 10 s, **more than 5 s of audio backlog**, or **ingress below real time for 10 s** → pad silence during gaps), `1011` (server error or 60 min cap), `1013` (rate limited). End: send `{"type":"endStream"}`, keep reading until close `1000`.
-- **The Meta Model API has no TTS.** The docs say Muse Voice Transcribe "does not synthesize speech or provide a speech-to-speech conversation API"; every Meta model lists text, image or masks as output; `/v1/audio/speech` answers 404; the cookbook has no synthesis. *[verified 2026-10-30: dev.meta.ai/docs, /docs/models, live `/v1/models`, cookbook]* Outside the API, Meta's open-weight MMS-TTS exists (`facebook/mms-tts-eng`, VITS, CC-BY-NC 4.0); it has not been evaluated here. So there is one voice, Microsoft Edge TTS (`edge-tts`), and one ASR, Muse Voice Transcribe, and no provider switch: a setting with a single option would be noise. If Meta ships a TTS, it plugs in at `tts/` as the primary with Edge behind it through `hedge.py`. This is stated plainly in the README.
+- **The Meta Model API has no TTS.** The docs say Muse Voice Transcribe "does not synthesize speech or provide a speech-to-speech conversation API"; every Meta model lists text, image or masks as output; `/v1/audio/speech` answers 404; the cookbook has no synthesis. *[verified 2026-10-30: dev.meta.ai/docs, /docs/models, live `/v1/models`, cookbook]* Outside the API, Meta's open-weight MMS-TTS exists (`facebook/mms-tts-eng`, VITS, CC-BY-NC 4.0); it has not been evaluated here. So the voice is not Meta's: Pocket TTS on this PC, with Edge behind it (§10), and one ASR, Muse Voice Transcribe. If Meta ships a TTS, it plugs in at `tts/backup.py`. This is stated plainly in the README.
+- **Spark can hold a call past its 4 s limit.** 6 of 1066 clauses were lost that way, and 1 to an empty answer. Its p99 is 2.3 s, so a second call races the first at 2 s, which doubles under 2 % of the calls, and a failed or empty answer is asked again at once.
 
 ## 9. Edge TTS facts this design relies on *[measured 2026-10-30 on this PC; Edge publishes none of this]*
 
@@ -221,3 +222,13 @@ The delay line (`audio/delay.py`) is written by the mic callback and read by the
 - **Edge has bad windows.** From 15 s to a minute at a time, turns on healthy sockets take 1–3 s, or the server closes the socket 2.5 s after the request with no close code. In one clean probe, app off, 9 of 127 turns; on the worst run of the day, 4 of 28 clauses timed out at 4 s. No pattern by the hour: runs a minute apart went from 0 to 11 hedges. A stalled turn races the spare socket and a one-shot request at 1.2 s; if everything fails, the clause tries again until 6 s. The 4 s of the first version lost clauses: the server can refuse all of it for more than that.
 - **Intermediate `rate` values are worse than 0 and +25 %.** Rate drawn at random per turn in the same window, three experiments: 1 of 262 turns failed at 0 or +25 %, 5 of 179 at anything else, with first audio at p50 0.35 s against 0.23 s in the worst window. Nothing explains it and the sample of failures is small, but the fix costs little: the isochrony uses only those two steps, which leaves the voice within ±12.5 % of the clause, inside the ±15 % goal.
 - **Clause length is predicted from characters, not words.** 242 clauses at rate 0: 0.047 s per character plus 0.40 s, residual ±0.13 s, against ±0.29 s for words at 3 per second. "For mid-sized companies" is three words and 1.56 s. An overflow is what makes a clean run miss its deadlines: audio was ready 2 s early and still had to wait for the previous clause to end.
+
+## 10. Pocket TTS facts this design relies on *[measured 2026-10-30 and 31 on this PC, Ryzen 9 6900HX]*
+
+- **The voice is `michael` on the default `english` model,** picked by ear, +3 dB (`RTT_POCKET_GAIN_DB`; a clause that would clip rises less). `george` on `english_18m_2026-10` is half the work and allows D = 5.5, and is one setting away.
+- **Time per clause:** p50 1.05 s, p95 1.40, max 1.71 over 219 clauses with 2 threads, using about 4 cores while it speaks. That is 1.2 times real time on these short clauses, not the 6 published. More threads cost twice the cores for 10 % less time, and int8 quantization was slower.
+- **Not thread-safe:** clauses go one at a time. No gap on the cable in any run.
+- **It can lose the end of speech** and run on in silence to its maximum: 8.1 s with `marius` and 2.9 s with `michael` on the 18M model, in 14 clauses each. None in 219 clauses each with `michael` and `george` on the default model. Generation stops at twice what the text could need.
+- **No speed control:** `rate_pct` becomes a WSOLA stretch in `tts/stretch.py`. About a third of the clauses use it. Length is predicted per voice: `michael` 0.0382 s per character plus 0.35 s.
+- **Loading takes about 15 s,** 42 s on the first run after an install, so it happens before the audio starts: a call must not change voice halfway. If it fails, Edge speaks every clause and the bar says `VOZ DE RESPALDO`.
+- **Licenses:** model CC BY 4.0, `michael` and `george` from VCTK, CC BY 4.0. Voices from `ears` and `expresso`, such as `jean`, `cosette`, are non-commercial and must not be used.
