@@ -40,6 +40,12 @@ Every PCM chunk carries `t_src_start` (when its clause started being spoken) and
 - **Not done:** one thread per fragment with independent translations (inconsistent, out of order, and emitted audio cannot be corrected); a separate classifier; more than one speculation in flight; revising commits. Ordering already exists: `utterance_id` + `commit_id` + `seq`. In Python these are `asyncio` tasks, not threads.
 - **When:** LA-2 on Saturday (60 s gate). Speculation, structured sufficiency and interpretese only if the gate passes, as a measured A/B in the JSONL. Expected gain: commit → first PCM from 2–4 s towards 1.5–2.5 s; the clause wait itself does not drop below 1.5–2 s.
 
+### 2.3 Turns
+
+**Their sustained speech takes the floor from my voice.** `turns/floor.py`: four words and a second since `speechStart`, because the English fixture reaches four words 1.4 s in and "I see." or "That sounds great." stay short of them. The floor expires 4 s after the last word from the ASR: a link that dies mid-turn must not hold my voice for the rest of the call.
+
+When it happens and my voice is busy, the mixer finishes the clause it holds and every clause behind it is dropped by `seq`, not by utterance: I may go on talking, and what I say after they stop still counts. Clauses said while they hold the floor are dropped too. What was dropped shows in grey under a red strip until I speak again. Metrics: `turn` events `yield`, `unsaid`, `floor_back`; a given-up clause is not a lost one. `gate_60s.py` passes `--no-yield`, because its two fixtures talk over each other by design.
+
 ## 3. Operational safety
 
 - **The receiver only hears English.** That is why the output is a virtual microphone: at rest the cable carries silence, and raw Spanish reaches it only when I choose (F9) or while the ASR is down.
@@ -213,6 +219,10 @@ The delay line (`audio/delay.py`) is written by the mic callback and read by the
   - Close codes: `1008` (no handshake in 10 s, **more than 5 s of audio backlog**, or **ingress below real time for 10 s** → pad silence during gaps), `1011` (server error or 60 min cap), `1013` (rate limited). End: send `{"type":"endStream"}`, keep reading until close `1000`.
 - **The Meta Model API has no TTS.** The docs say Muse Voice Transcribe "does not synthesize speech or provide a speech-to-speech conversation API"; every Meta model lists text, image or masks as output; `/v1/audio/speech` answers 404; the cookbook has no synthesis. *[verified 2026-10-30: dev.meta.ai/docs, /docs/models, live `/v1/models`, cookbook]* Outside the API, Meta's open-weight MMS-TTS exists (`facebook/mms-tts-eng`, VITS, CC-BY-NC 4.0); it has not been evaluated here. So the voice is not Meta's: Pocket TTS on this PC, with Edge behind it (§10), and one ASR, Muse Voice Transcribe. If Meta ships a TTS, it plugs in at `tts/backup.py`. This is stated plainly in the README.
 - **Spark can hold a call past its 4 s limit.** 6 of 1066 clauses were lost that way, and 1 to an empty answer. Its p99 is 2.3 s, so a second call races the first at 2 s, which doubles under 2 % of the calls, and a failed or empty answer is asked again at once.
+
+- **Spanish inside English speech is the weakest ASR case,** and the result changes run to run. Spanish words kept out of 13 in `fixture_spanglish` (a synthetic American voice, 6 runs for `en,es`, 3 for the rest): no bias 11, 0, 0; `es,en` 7, 0, 0; `en,es` 10, 10, 8, 11, 4, 0. So the bias is `["en", "es"]`; pure Spanish keeps 15 of 15 words under either order. With terms in `keywords` it reached 10, 11, 13 with `en,es`, but those keywords were written for this fixture, so that is a ceiling. When it fails it skips the passage: nothing reaches Spark. Not measured with a real voice.
+- **Spark repairs what the ASR spells wrong** if told how: `SPANGLISH` in `mt/spark.py` lists the patterns seen (`K` for `que`, `no say` for `no sé`, `paces` for `países`) and treats word searching as filler. Over the same clauses no Spanish word was left. A clause that was only a filler comes back empty twice and counts as `filler`, not as lost.
+- **Conversation cost.** Spark with 0, 2 000, 8 000, 32 000, 128 000 and 512 000 characters of conversation, p50 of 8 calls: 0.95, 1.01, 1.05, 1.10, 2.06 and 3.64 s, with one call at 16.9 s at 128 000. `mt/context.py` stops at 32 000 characters, about 40 minutes of talk. It changes real clauses: with a question about message queues, "la cola se llena" goes from "the line fills up" to "the queue fills up".
 
 ## 9. Edge TTS facts this design relies on *[measured 2026-10-30 on this PC; Edge publishes none of this]*
 

@@ -19,6 +19,10 @@ Work in progress during the hackathon week. Daily logs with measured numbers liv
 | Safety: silent rest state, F9 latch, F10 via Core Audio, watchdog, restore on exit | done, physical keys pending |
 | Incremental clause commits (LA-2), both directions | done, measured on synthetic voices |
 | Synchronized dub with fixed delay D | audio measured on synthetic voices, delayed camera running through the OBS driver; clap calibration and a real call still to do |
+| Spanglish: English that falls into Spanish comes out as one English voice | done and measured on a synthetic voice; the ASR sometimes drops whole Spanish passages |
+| Turns: their sustained speech takes the floor from my voice | done, measured with both fixtures talking over each other |
+| Context: the whole conversation and a glossary reach Spark | done, measured on latency and on ambiguous clauses |
+| One-button widget and draggable metrics line | done, driven from code; not yet used by a person |
 
 ## How it works (short)
 
@@ -58,6 +62,12 @@ To check it without speaking: `uv run python scripts/make_fixtures.py`, then `uv
 **Synchronized dub** (`RTT_DUB=1` or `--dub`): the other side gets my video and voice D seconds late, so the English voice starts and stops with my lips. Needs OBS Studio installed once for its virtual camera driver; OBS itself stays closed. Pick `OBS Virtual Camera` in the call, and run `uv run python scripts/calibrate_av_offset.py` once to line up picture and voice. The self-view shows the delayed video, and with a shared screen the cursor runs D seconds ahead of the voice, so turn the dub off to share.
 
 Dependencies are pinned exactly and locked (`uv.lock`), resolved with a supply-chain cooldown (`exclude-newer = "2026-10-22"`).
+
+**Spanglish.** Say it in English, fall into Spanish when you get stuck, and one English voice comes out. "Cómo se dice" and "no sé" are dropped as fillers. Known limit: on a synthetic voice the ASR kept between 0 and 11 of 13 Spanish words inside English speech, and sometimes skips a passage entirely, so that passage is not interpreted. Terms in the glossary raised it to 10–13 of 13.
+
+**Turns.** If the other side really starts talking (four words and a second of speech, so "yeah" does not count), my voice finishes the clause it is on and gives way. What it did not say stays on the band in grey, to repeat, under a red strip. The floor comes back when they stop.
+
+**Glossary.** Copy `glossary.example.txt` to `glossary.txt`. Terms reach Spark in both directions and the ASR as hints.
 
 ## Metrics
 
