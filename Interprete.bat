@@ -18,7 +18,8 @@ if not exist ".env" (
 
 echo Interprete ES-EN    F7 aviso    F8 mudo    F9 tu voz cruda on/off    F10 mic fisico    Ctrl-C salir
 echo En la videollamada elige "CABLE Output" como microfono: al otro lado solo llega ingles.
-echo Mientras esta ventana siga abierta, lo que oye el microfono va a la API de Meta. Cierrala al terminar.
+echo Tarda unos 20 s en cargar. Nada sale de esta PC hasta que pulses el boton redondo, arriba a la derecha.
+echo Otro clic, o clic derecho, apaga todo y restaura el microfono.
 echo.
 uv run --locked python -m interprete.app %*
 

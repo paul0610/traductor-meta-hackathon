@@ -1,0 +1,184 @@
+"""The app's one button, and the metrics line, both on top and free to drag out of the way.
+
+Left click starts from LISTO and stops from then on; right click stops from any state.
+Stopping restores the microphone. The ring is the health of the lag, the number the lag
+in seconds. Nothing here is a setting: what the app needs from you shows on the metrics line.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import ctypes
+from typing import Callable
+
+from PySide6.QtCore import QPoint, QRectF, Qt, QTimer
+from PySide6.QtGui import QColor, QFont, QPainter, QPen
+from PySide6.QtWidgets import QApplication, QHBoxLayout, QLabel, QWidget
+
+from .overlay import Overlay
+from .status import Health, Phase
+
+WDA_EXCLUDEFROMCAPTURE = 0x11
+SIZE = 112
+RING_PX = 8
+DRAG_PX = 4                    # moved less than this, it was a click
+RING = {Health.NONE: "#6b7280", Health.OK: "#30a46c", Health.WARN: "#f5a623", Health.BAD: "#e5484d"}
+FIXED = {Phase.LOADING: "#6b7280", Phase.READY: "#8fd3ff", Phase.PAUSED: "#e5484d", Phase.RAW: "#f5a623", Phase.OFF: "#3f4650"}
+FLAGS = (Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.FramelessWindowHint | Qt.WindowType.Tool
+         | Qt.WindowType.WindowDoesNotAcceptFocus)
+
+
+class _Floating(QWidget):
+    """Frameless, on top, never takes the keyboard from the call, moves when dragged."""
+
+    def __init__(self, hide_from_capture: bool) -> None:
+        super().__init__()
+        self.setWindowFlags(FLAGS)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
+        self.hide_from_capture = hide_from_capture
+        self._press: QPoint | None = None
+        self._dragged = False
+
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        if self.hide_from_capture:
+            QTimer.singleShot(0, lambda: ctypes.windll.user32.SetWindowDisplayAffinity(int(self.winId()),
+                                                                                       WDA_EXCLUDEFROMCAPTURE))
+
+    def mousePressEvent(self, event) -> None:
+        self._press = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
+        self._dragged = False
+
+    def mouseMoveEvent(self, event) -> None:
+        if self._press is None:
+            return
+        target = event.globalPosition().toPoint() - self._press
+        if (target - self.frameGeometry().topLeft()).manhattanLength() >= DRAG_PX or self._dragged:
+            self._dragged = True
+            self.move(target)
+
+    def mouseReleaseEvent(self, event) -> None:
+        self._press = None
+
+
+class Button(_Floating):
+    def __init__(self, *, hide_from_capture: bool = False) -> None:
+        super().__init__(hide_from_capture)
+        self.setWindowTitle("Interprete: boton")
+        self.setFixedSize(SIZE, SIZE)
+        self.phase = Phase.LOADING
+        self.lag_s: float | None = None
+        self.health = Health.NONE
+        self.on_start: Callable[[], None] = lambda: None
+        self.on_stop: Callable[[], None] = lambda: None
+        screen = QApplication.primaryScreen()
+        if screen is not None:
+            g = screen.availableGeometry()
+            self.move(g.x() + g.width() - SIZE - 24, g.y() + 24)
+
+    def set_phase(self, phase: Phase) -> None:
+        if phase is not self.phase:
+            self.phase = phase
+            self.update()
+
+    def set_vitals(self, lag_s: float | None, level: Health) -> None:
+        self.lag_s, self.health = lag_s, level
+        self.update()
+
+    def clicked(self, left: bool) -> None:
+        if not left:
+            self.on_stop()
+        elif self.phase is Phase.READY:
+            self.on_start()
+        elif self.phase in (Phase.LIVE, Phase.PAUSED, Phase.RAW):
+            self.on_stop()
+
+    def mouseReleaseEvent(self, event) -> None:
+        if self._press is not None and not self._dragged:
+            self.clicked(event.button() == Qt.MouseButton.LeftButton)
+        super().mouseReleaseEvent(event)
+
+    def _centre(self) -> str:
+        if self.phase is Phase.READY:
+            return "▶"
+        if self.phase in (Phase.LIVE, Phase.PAUSED) and self.lag_s is not None:
+            return f"{self.lag_s:.1f}"
+        return {Phase.LOADING: "…", Phase.PAUSED: "❚❚", Phase.RAW: "!", Phase.OFF: "■"}.get(self.phase, "–")
+
+    def paintEvent(self, event) -> None:
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        area = QRectF(RING_PX / 2 + 1, RING_PX / 2 + 1, SIZE - RING_PX - 2, SIZE - RING_PX - 2)
+        p.setBrush(QColor(12, 14, 18, 235))
+        p.setPen(QPen(QColor(RING[self.health] if self.phase is Phase.LIVE else FIXED[self.phase]), RING_PX))
+        p.drawEllipse(area)
+        p.setPen(QColor("#ffffff"))
+        p.setFont(QFont("Segoe UI", 21, QFont.Weight.Bold))
+        p.drawText(QRectF(0, 18, SIZE, 50), Qt.AlignmentFlag.AlignCenter, self._centre())
+        p.setPen(QColor("#b9bec6"))
+        p.setFont(QFont("Segoe UI", 8, QFont.Weight.DemiBold))
+        p.drawText(QRectF(0, 66, SIZE, 18), Qt.AlignmentFlag.AlignCenter, self.phase.value)
+
+
+class MetricsLine(_Floating):
+    def __init__(self, *, hide_from_capture: bool = False) -> None:
+        super().__init__(hide_from_capture)
+        self.setWindowTitle("Interprete: metricas")
+        self._label = QLabel("")
+        self._label.setFont(QFont("Consolas", 10))
+        self._label.setStyleSheet("color: #d6d9de;")
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(14, 6, 14, 6)
+        layout.addWidget(self._label)
+        screen = QApplication.primaryScreen()
+        if screen is not None:
+            g = screen.availableGeometry()
+            self.move(g.x() + 24, g.y() + 24)
+
+    def set_text(self, text: str) -> None:
+        self._label.setText(text)
+        self.adjustSize()
+
+    def paintEvent(self, event) -> None:
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QColor(0, 0, 0, 215))
+        p.drawRoundedRect(QRectF(self.rect()), 8, 8)
+
+
+class Screen:
+    """The three windows as one thing for the chains; subtitle calls go straight to the band."""
+
+    def __init__(self, *, hide_from_capture: bool = False) -> None:
+        self.overlay = Overlay(hide_from_capture=hide_from_capture)
+        self.button = Button(hide_from_capture=hide_from_capture)
+        self.metrics = MetricsLine(hide_from_capture=hide_from_capture)
+
+    def __getattr__(self, name: str):
+        return getattr(self.overlay, name)
+
+    def show(self) -> None:
+        self.overlay.show()
+        self.metrics.show()
+        self.button.show()
+
+    def bar(self, text: str) -> None:
+        self.metrics.set_text(text)
+
+    def phase(self, phase: Phase) -> None:
+        self.button.set_phase(phase)
+
+    def vitals(self, lag_s: float | None, level: Health) -> None:
+        self.button.set_vitals(lag_s, level)
+
+    async def go(self, stop: asyncio.Event) -> None:
+        """Nothing is captured until the button is pressed."""
+        start = asyncio.Event()
+        self.button.on_start = start.set
+        self.button.on_stop = stop.set
+        waiting = [asyncio.ensure_future(start.wait()), asyncio.ensure_future(stop.wait())]
+        await asyncio.wait(waiting, return_when=asyncio.FIRST_COMPLETED)
+        for w in waiting:
+            w.cancel()

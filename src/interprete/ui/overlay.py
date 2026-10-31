@@ -1,4 +1,4 @@
-"""Subtitle band: what they say (English as it arrives, then Spanish), what I said, and one metrics line.
+"""Subtitle band: what they say (English as it arrives, then Spanish), what I said, what my voice gave up.
 
 Always on top, click-through and never takes focus, so the call app keeps the
 keyboard. `hide_from_capture` keeps it out of screen shares (WDA_EXCLUDEFROMCAPTURE);
@@ -17,6 +17,8 @@ WDA_EXCLUDEFROMCAPTURE = 0x11
 GREY = "#b9bec6"
 WHITE = "#ffffff"
 BLUE = "#8fd3ff"
+RED = "#e5484d"
+BAND_PX = 6
 
 
 def _tail(text: str, limit: int) -> str:
@@ -37,11 +39,13 @@ class Overlay(QWidget):
         self._src = self._label(14, GREY)
         self._tgt = self._label(20, WHITE, bold=True)
         self._mine = self._label(12, BLUE)
-        self._bar = self._label(10, GREY, family="Consolas")
+        self._unsaid = self._label(12, GREY)
+        self._unsaid.hide()
+        self._colliding = False
         layout = QVBoxLayout(self)
         layout.setContentsMargins(22, 12, 22, 10)
         layout.setSpacing(4)
-        for w in (self._src, self._tgt, self._mine, self._bar):
+        for w in (self._src, self._tgt, self._mine, self._unsaid):
             layout.addWidget(w)
         self._place()
 
@@ -68,6 +72,9 @@ class Overlay(QWidget):
         p.setPen(Qt.PenStyle.NoPen)
         p.setBrush(QColor(0, 0, 0, 215))
         p.drawRoundedRect(QRectF(self.rect()), 12, 12)
+        if self._colliding:
+            p.setBrush(QColor(RED))
+            p.drawRoundedRect(QRectF(0, 0, self.width(), BAND_PX), 3, 3)
 
     def showEvent(self, event) -> None:
         super().showEvent(event)
@@ -95,5 +102,11 @@ class Overlay(QWidget):
     def mine(self, es: str, en: str = "") -> None:
         self._mine.setText(_tail(f"{es}  →  {en}" if en else es, 180))
 
-    def bar(self, text: str) -> None:
-        self._bar.setText(text)
+    def unsaid(self, es: str) -> None:
+        """What my voice gave up when they took the floor, to say again."""
+        self._unsaid.setText(_tail(f"Sin decir: {es}", 180) if es else "")
+        self._unsaid.setVisible(bool(es))
+
+    def collision(self, on: bool) -> None:
+        self._colliding = on
+        self.update()

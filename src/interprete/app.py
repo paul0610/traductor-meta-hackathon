@@ -43,6 +43,7 @@ from .clock import now
 from .contracts import AsrEvent, AsrKind, Channel, Commit, PcmChunk
 from .metrics.jsonl import Metrics, read
 from .metrics.summary import summarize
+from .mt.context import Conversation, load_glossary
 from .mt.spark import EmptyTranslation, Spark
 from .policy.consecutivo import Consecutive
 from .policy.incremental import Incremental
@@ -50,9 +51,12 @@ from .policy.scheduler import MT_TIMEOUT_S, TTS_TIMEOUT_S, Scheduler
 from .safety import ExitGuard, Watchdog
 from .tts.backup import make_voice
 from .tts.edge import FAST_RATE_PCT
+from .turns.floor import Floor
+from .ui.status import Phase, health
 from .video.virtual_cam import VirtualCam
 
-MT_ERRORS = (TimeoutError, openai.APIError, json.JSONDecodeError, KeyError, EmptyTranslation)
+MT_ERRORS = (TimeoutError, openai.APIError, json.JSONDecodeError, KeyError)
+LANGUAGE_BIAS = ["en", "es"]    # this order keeps the most Spanish inside English speech, and pure Spanish stays intact
 ASR_FALLBACK_S = 3.0            # ASR down this long: live voice, nothing can be translated
 CABLE_MIN_VOLUME = 0.95
 CATCH_UP_BACKLOG_S = 3.0        # behind by more than this: the next clause is spoken faster
@@ -81,10 +85,13 @@ def dub_delay(args, settings: config.Settings) -> float:
 
 
 class NoUi:
-    """Stands in for the overlay in `--no-overlay` runs."""
+    """Stands in for the screen in `--no-overlay` runs."""
 
     def __getattr__(self, name):
         return lambda *a: None
+
+    async def go(self, stop: asyncio.Event) -> None:
+        pass
 
 
 class Outgoing:
@@ -119,6 +126,11 @@ class Outgoing:
         self.video: VirtualCam | None = None
         self.video_warning = ""
         self.cable_warning = ""
+        self.conversation = Conversation()           # shared with the incoming chain
+        self.floor: Floor | None = None              # the incoming chain's, when there is one
+        self.held = False                           # gave way: my clauses wait until their turn ends
+        self.yields = 0
+        self.unsaid: list[str] = []                  # on screen in grey, to say again
         self.t_start = now()
         self.asr: MetaRealtimeAsr | None = None
         self.spark: Spark | None = None
@@ -127,7 +139,8 @@ class Outgoing:
     # --- wiring --------------------------------------------------------------------
 
     def setup(self, key: str, spark: Spark) -> None:
-        self.asr = MetaRealtimeAsr(Channel.OUT, key, mode="ENDPOINTING", emit=self.emit)
+        self.asr = MetaRealtimeAsr(Channel.OUT, key, mode="ENDPOINTING", language_bias=LANGUAGE_BIAS,
+                                   keywords=[*spark.glossary] or None, emit=self.emit)
         self.spark = spark
         self.policy = POLICIES[self.args.mode](Channel.OUT, self.asr.clock.to_local, emit=self.emit)
 
@@ -238,12 +251,19 @@ class Outgoing:
         if self.mixer.latched:                       # F9 is on: nothing takes the cable until it is released
             self.sched.tombstone(c.seq, "latched")
             return
+        if self.held:
+            self.sched.tombstone(c.seq, "yielded")
+            self.note_unsaid([c.seq])
+            return
+        if self.unsaid:                              # back to speaking: the old grey line has served
+            self.unsaid = []
+            self.ui.unsaid("")
         self.q_commits.put_nowait(c)
 
     async def mt_worker(self) -> None:
         while True:
             c = await self.q_commits.get()
-            if self.sched.is_cancelled(c.utterance_id):
+            if self.sched.is_cancelled(c.utterance_id) or self.sched.resolved(c.seq):
                 self.sched.tombstone(c.seq, "cancelled")
                 continue
             if c.text_tgt:                           # notice and simulate mode: already in English
@@ -255,7 +275,12 @@ class Outgoing:
             try:
                 r = await asyncio.wait_for(self.spark.translate(c.text_src, prefix=c.prefix_src, history=self.recent(),
                                                                 fragment=self.args.mode == "incremental",
+                                                                context=self.conversation.text(),
                                                                 on_hedge=on_mt_hedge), MT_TIMEOUT_S)
+            except EmptyTranslation:                 # only a filler: nothing was lost, there was nothing to say
+                self.sched.tombstone(c.seq, "filler")
+                self.emit("mt", channel="out", seq=c.seq, utterance_id=c.utterance_id, filler=True)
+                continue
             except MT_ERRORS as exc:
                 self.sched.tombstone(c.seq, f"mt:{type(exc).__name__}")
                 self.emit("mt", channel="out", seq=c.seq, utterance_id=c.utterance_id, error=f"{type(exc).__name__}: {exc}"[:300])
@@ -263,6 +288,7 @@ class Outgoing:
                 continue
             c.text_tgt, c.t_mt, c.mt_calls = r.translation, r.t_end, 1
             self.translated[c.seq] = (c.text_src, c.text_tgt)
+            self.conversation.add("Me", c.text_tgt)
             self.timings[c.seq].update(t_mt=r.t_end, mt_s=r.t_end - r.t_start, text_tgt=c.text_tgt)
             self.emit("mt", channel="out", seq=c.seq, utterance_id=c.utterance_id, t_mt=r.t_end, mt_s=r.t_end - r.t_start,
                       text_tgt=c.text_tgt, mt_calls_per_commit=1, reasoning_tokens=r.reasoning_tokens,
@@ -274,7 +300,7 @@ class Outgoing:
     async def tts_worker(self) -> None:
         while True:
             c = await self.q_translated.get()
-            if self.sched.is_cancelled(c.utterance_id):
+            if self.sched.is_cancelled(c.utterance_id) or self.sched.resolved(c.seq):
                 self.sched.tombstone(c.seq, "cancelled")
                 continue
             def on_hedge() -> None:
@@ -307,6 +333,32 @@ class Outgoing:
                       rate_pct=rate_pct, stretch_ratio=chunk.stretch_ratio, backlog_s=self.sched.backlog_s(now()))
             self.sched.submit(chunk)
 
+    def note_unsaid(self, seqs: list[int]) -> None:
+        for s in seqs:
+            self.emit("turn", what="unsaid", channel="out", seq=s)
+        self.unsaid += [self.timings[s]["text_src"] for s in seqs if s in self.timings]
+        self.ui.unsaid(" ".join(self.unsaid))
+
+    def give_way(self, t: float) -> None:
+        """Their turn: my voice ends with the clause it is on, and what it did not say stays on screen."""
+        self.held = True
+        self.yields += 1
+        self.unsaid = []
+        dropped = self.sched.give_way()
+        self.emit("turn", what="yield", channel="out", t_yield=t, t_voice_ends=max(t, self.sched.voice_ends_at),
+                  dropped=len(dropped))
+        self.ui.collision(True)
+        self.note_unsaid(dropped)
+
+    def turns(self, t: float) -> None:
+        theirs = self.floor is not None and self.floor.theirs(t)
+        if theirs and not self.held and not self.idle():
+            self.give_way(t)
+        elif self.held and not theirs:
+            self.held = False
+            self.emit("turn", what="floor_back", channel="out", t_back=t)
+            self.ui.collision(False)
+
     def behind(self, c: Commit, t: float) -> bool:
         if self.delay_s > 0:
             return self.sched.lateness(self.sched.deadline_for(c.t_src_start), t) > CATCH_UP_SYNC_S
@@ -327,8 +379,9 @@ class Outgoing:
             sync = f" │ SYNC {self.sync_err:+.1f}s (D {self.delay_s:.1f}s)"
             if self.sync_late >= SYNC_LATE_STREAK:
                 sync += f" TARDE: reinicia con D {self.delay_s + 0.5:.1f}"
-        return (f"LAG {lag}{sync} │ CORR 0 │ ES→EN {self.mixer.state.value}{link}{self.cable_warning}{self.video_warning}{self.voice.warning}"
-                f" │ META {(t - self.t_start) / 60:.0f} min")
+        turn = " │ TURNO: ellos" if self.floor is not None and self.floor.theirs(t) else " │ TURNO: yo"
+        return (f"LAG {lag}{sync} │ CORR 0{turn} │ ES→EN {self.mixer.state.value}{link}{self.cable_warning}"
+                f"{self.video_warning}{self.voice.warning} │ META {(t - self.t_start) / 60:.0f} min")
 
     async def controller(self) -> None:
         """TTS → rest once idle, watchdog, overlay line: all need the scheduler, so none lives in the callback."""
@@ -338,9 +391,13 @@ class Outgoing:
             self.mixer.release_if_idle(self.sched.in_flight(), t)
             self.watchdog.check(t)
             self.fallback(t)
+            self.turns(t)
             if t >= t_bar:
                 t_bar = t + 0.5
                 self.ui.bar(self.bar_text(t))
+                lag = self.lags[-1] if self.lags else None
+                self.ui.vitals(lag, health(lag, self.sync_err, self.delay_s))
+                self.ui.phase(Phase.RAW if self.mixer.latched else Phase.PAUSED if self.held else Phase.LIVE)
             await asyncio.sleep(0.05)
 
     def send_notice(self) -> None:
@@ -402,7 +459,7 @@ class Outgoing:
                 self.emit("commit", phase="report", channel="out", **r)
         self.emit("run", seq_skipped=self.sched.seq_skipped, cable_gaps=self.mixer.cable_gaps,
                   watchdog_trips=self.watchdog.trips, mode=self.args.mode, tts_reconnects=self.voice.reconnects,
-                  tts_voice=self.voice.name, delay_s=self.delay_s, voice_under_db=self.settings.voice_under_db if self.delay_s > 0 else None,
+                  tts_voice=self.voice.name, yields=self.yields, delay_s=self.delay_s, voice_under_db=self.settings.voice_under_db if self.delay_s > 0 else None,
                   delay_jumps=self.delay.jumps if self.delay is not None else 0,
                   corrections_blocked=self.policy.corrections_blocked if self.policy is not None else 0)
 
@@ -419,6 +476,8 @@ class Incoming:
         self.history: list[tuple[str, str]] = []
         self.rows: dict[int, dict] = {}
         self.turn_text = ""                          # the subtitle grows clause by clause within a turn
+        self.floor = Floor()
+        self.conversation = Conversation()           # replaced by the outgoing chain's when both run
         self.pending = 0
         self.loopback: LoopbackCapture | None = None
         self.asr: MetaRealtimeAsr | None = None
@@ -426,7 +485,8 @@ class Incoming:
         self.policy: Consecutive | None = None
 
     def setup(self, key: str, spark: Spark) -> None:
-        self.asr = MetaRealtimeAsr(Channel.IN, key, mode="ENDPOINTING", emit=self.emit)
+        self.asr = MetaRealtimeAsr(Channel.IN, key, mode="ENDPOINTING", keywords=[*spark.glossary.values()] or None,
+                                   emit=self.emit)
         self.spark = spark
         self.policy = POLICIES[self.args.mode](Channel.IN, self.asr.clock.to_local, emit=self.emit)
 
@@ -440,6 +500,7 @@ class Incoming:
         return self.pending == 0
 
     def on_asr_event(self, ev: AsrEvent) -> None:
+        self.floor.on_event(ev)
         if ev.kind is AsrKind.SPEECH_COMPLETE:
             print(f"\r[them] {ev.text}".ljust(100))
             self.ui.their_final(ev.text)
@@ -463,13 +524,19 @@ class Incoming:
                 r = await asyncio.wait_for(self.spark.translate(c.text_src, src="en", tgt="es", prefix=c.prefix_src,
                                                                 history=self.history[-4:],
                                                                 fragment=self.args.mode == "incremental",
+                                                                context=self.conversation.text(),
                                                                 on_hedge=on_mt_hedge), MT_TIMEOUT_S)
+            except EmptyTranslation:
+                self.emit("mt", channel="in", seq=c.seq, utterance_id=c.utterance_id, filler=True)
+                self.pending -= 1
+                continue
             except MT_ERRORS as exc:
                 self.ui.their_failed(c.text_src)
                 self.emit("mt", channel="in", seq=c.seq, utterance_id=c.utterance_id, error=f"{type(exc).__name__}: {exc}"[:300])
                 self.pending -= 1
                 continue
             self.history.append((c.text_src, r.translation))
+            self.conversation.add("Them", c.text_src)
             self.turn_text = r.translation if c.commit_id == 0 else f"{self.turn_text} {r.translation}"
             self.ui.their_translation(self.turn_text)
             print(f"\r[sub] {r.translation}".ljust(100))
@@ -493,6 +560,7 @@ class Incoming:
 class App:
     def __init__(self, args, settings: config.Settings, metrics: Metrics, ui) -> None:
         self.args = args
+        self.settings = settings
         self.metrics = metrics
         self.emit = metrics.emit
         self.ui = ui
@@ -500,6 +568,10 @@ class App:
         self.loop = asyncio.get_running_loop()
         self.out = None if args.in_only else Outgoing(args, settings, metrics, ui, self.stop)
         self.inc = None if args.out_only or args.simulate else Incoming(args, metrics, ui, self.stop)
+        if self.out is not None and self.inc is not None:
+            self.inc.conversation = self.out.conversation
+            if not args.no_yield:
+                self.out.floor = self.inc.floor
         self.spark: Spark | None = None
         self.mic_name = devices.find(settings.mic_name, "input", ("CABLE",)).name     # the one F10 brings back
         self.tasks: list[asyncio.Task] = []
@@ -570,7 +642,7 @@ class App:
         try:
             await asyncio.wait_for(self.spark.translate("Buenos días."), 5.0)
             self.emit("state", what="spark_warm")
-        except MT_ERRORS as exc:
+        except (*MT_ERRORS, EmptyTranslation) as exc:
             self.emit("state", what="spark_warm", error=f"{type(exc).__name__}: {exc}"[:300])
 
     async def fixtures(self) -> None:
@@ -589,12 +661,24 @@ class App:
     async def run(self) -> None:
         if not self.args.simulate:
             key = config.require_api_key()
-            self.spark = Spark(key, timeout_s=MT_TIMEOUT_S)
+            self.spark = Spark(key, timeout_s=MT_TIMEOUT_S, glossary=load_glossary(self.settings.glossary_path))
             for c in self.chains:
                 c.setup(key, self.spark)
         if self.out is not None:                     # first: two voices in one call is worse than a later start
             self.ui.mine("Cargando la voz…")
             await self.out.voice.start()
+        if self.spark is not None:
+            await self.warm()
+        self.ui.phase(Phase.READY)
+        self.ui.mine("Listo. Nada sale de esta PC hasta que pulses el botón.")
+        await self.ui.go(self.stop)
+        if self.stop.is_set():
+            if self.out is not None:
+                await self.out.voice.close()
+            self.guard.run()
+            self.ui.phase(Phase.OFF)
+            return
+        self.ui.phase(Phase.LIVE)
         for c in self.chains:
             c.start_audio()
         self.hotkeys()
@@ -605,8 +689,6 @@ class App:
         for c in self.chains:
             for name, coro in c.tasks().items():
                 self._task(name, coro)
-        if self.spark is not None:
-            self._task("app.warm", self.warm())
         if self.args.notice and self.out is not None:
             self.out.send_notice()
         if self.args.simulate:
@@ -623,6 +705,8 @@ class App:
             for c in self.chains:
                 await c.close()
             self.guard.run()
+            self.ui.phase(Phase.OFF)
+            self.ui.mine("Apagado. Micrófono físico restaurado.")
 
     def report(self) -> None:
         for c in self.chains:
@@ -666,6 +750,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     ap.add_argument("--out-only", action="store_true", help="no incoming chain")
     ap.add_argument("--in-only", action="store_true", help="no outgoing chain")
     ap.add_argument("--no-overlay", action="store_true", help="console only")
+    ap.add_argument("--no-yield", action="store_true", help="my voice never gives way: the 60 s gate talks over itself")
     ap.add_argument("--wav-out", default=None, help="16 kHz WAV replayed instead of the mic")
     ap.add_argument("--wav-in", default=None, help="16 kHz WAV replayed instead of the loopback")
     ap.add_argument("--notice", action="store_true", help="play the initial notice at start, as F7 does")
@@ -682,18 +767,18 @@ def main() -> None:
     from PySide6.QtWidgets import QApplication
     from qasync import QEventLoop
 
-    from .ui.overlay import Overlay
+    from .ui.widget import Screen
 
     qt = QApplication([sys.argv[0]])
-    overlay = Overlay(hide_from_capture=config.load().overlay_hide_from_capture)
-    overlay.show()
-    timer = QTimer()                                 # lets Python run signal handlers while Qt sleeps
+    screen = Screen(hide_from_capture=config.load().overlay_hide_from_capture)
+    screen.show()
+    timer = QTimer()                                # lets Python run signal handlers while Qt sleeps
     timer.timeout.connect(lambda: None)
     timer.start(200)
     loop = QEventLoop(qt)
     asyncio.set_event_loop(loop)
     with loop:
-        loop.run_until_complete(run_app(args, overlay))
+        loop.run_until_complete(run_app(args, screen))
 
 
 if __name__ == "__main__":
