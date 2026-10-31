@@ -29,7 +29,7 @@ import openai
 import soxr
 
 from . import config
-from .asr.meta_realtime import MetaRealtimeAsr
+from .asr.meta_realtime import QUEUE_BLOCKS, MetaRealtimeAsr
 from .audio import devices
 from .audio.cable_mixer import CableMixer, State
 from .audio.capture import MicCapture, QueueFeeder, To16k
@@ -115,7 +115,7 @@ class Outgoing:
         self.voice = make_voice(settings, self.mixer.rate, size=WORKERS + 1, emit=self.emit)   # one spare socket
         self.watchdog = Watchdog(self.mixer, self.sched, emit=self.emit)
         self.mic = MicCapture(settings.mic_name, emit=self.emit)
-        self.q_pcm: asyncio.Queue = asyncio.Queue(maxsize=250)
+        self.q_pcm: asyncio.Queue = asyncio.Queue(maxsize=QUEUE_BLOCKS)
         self.q_commits: asyncio.Queue[Commit] = asyncio.Queue()
         self.q_translated: asyncio.Queue[Commit] = asyncio.Queue()
         self.translated: dict[int, tuple[str, str]] = {}
@@ -167,15 +167,16 @@ class Outgoing:
         print(f"cable {self.mixer.device.name} [{self.mixer.device.hostapi}] {self.mixer.rate} Hz "
               f"{self.mixer.channels} ch, state {self.mixer.state.value}", file=sys.stderr)
         self.check_cable_level()
-        if self.delay_s > 0 and not self.args.wav_out:
-            self.start_video()
 
-    def start_video(self) -> None:
-        """Without the delayed camera the dub still runs, but the lips lead the voice by D, so the bar says so."""
+    async def start_video(self) -> None:
+        """Off the loop: the webcam takes seconds, and the ASR connects meanwhile.
+
+        Without the delayed camera the dub still runs, but the lips lead the voice by D, so the bar says so.
+        """
         video = VirtualCam(self.delay_s + self.settings.av_offset_ms / 1000, lambda: self.mixer.live,
                            name_sub=self.settings.camera_name, emit=self.emit)
         try:
-            video.start()
+            await asyncio.to_thread(video.start)
         except (RuntimeError, OSError) as exc:
             self.video_warning = " │ SIN CÁMARA RETRASADA"
             self.emit("video", error=repr(exc)[:300])
@@ -450,6 +451,8 @@ class Outgoing:
             jobs[f"out.tts{i}"] = self.tts_worker()
         if self.asr is not None:
             jobs["out.asr"] = self.asr.run(self.q_pcm, self.on_asr_event, self.stop)
+        if self.delay_s > 0 and not self.args.wav_out:
+            jobs["out.video"] = self.start_video()
         return jobs
 
     async def close(self) -> None:
@@ -477,7 +480,7 @@ class Incoming:
         self.ui = ui
         self.stop = stop
         self.loop = asyncio.get_running_loop()
-        self.q_pcm: asyncio.Queue = asyncio.Queue(maxsize=250)
+        self.q_pcm: asyncio.Queue = asyncio.Queue(maxsize=QUEUE_BLOCKS)
         self.q_commits: asyncio.Queue[Commit] = asyncio.Queue()
         self.history: list[tuple[str, str]] = []
         self.rows: dict[int, dict] = {}

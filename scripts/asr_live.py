@@ -21,7 +21,7 @@ from pathlib import Path
 import numpy as np
 
 from interprete import config
-from interprete.asr.meta_realtime import MetaRealtimeAsr
+from interprete.asr.meta_realtime import QUEUE_BLOCKS, MetaRealtimeAsr
 from interprete.audio.capture import MicCapture, QueueFeeder, To16k
 from interprete.audio.fixture import RATE, read_wav, replay, save_wav
 from interprete.clock import now
@@ -61,7 +61,7 @@ async def main() -> int:
     stamp = time.strftime("%Y%m%d_%H%M%S")
     metrics = Metrics(Path("logs") / f"asr_{stamp}.jsonl")
     loop = asyncio.get_running_loop()
-    q: asyncio.Queue = asyncio.Queue(maxsize=250)          # ≤ 5 s of 20 ms blocks
+    q: asyncio.Queue = asyncio.Queue(maxsize=QUEUE_BLOCKS)
     stop = asyncio.Event()
     tap = Tap()
     events: list[dict] = []

@@ -24,6 +24,7 @@ from ..contracts import AsrEvent, AsrKind, Channel
 
 SAMPLE_RATES = {"PCM_16KHZ": 16000, "PCM_24KHZ": 24000}
 MAX_AHEAD_S = 4.0                # stay clearly under the server's 5 s backlog limit
+QUEUE_BLOCKS = 150               # 3 s at 20 ms, under MAX_AHEAD_S: audio the sender holds back never catches up (measured 1.18 s for good)
 ROTATE_AFTER_S = 55 * 60         # sessions are capped at 60 min; rotate before
 _KINDS = {
     "speechStart": AsrKind.SPEECH_START, "speechEnd": AsrKind.SPEECH_END,
