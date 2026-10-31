@@ -1,8 +1,9 @@
 """The app's one button, and the metrics line, both on top and free to drag out of the way.
 
-Left click starts from LISTO and stops from then on; right click stops from any state.
-Stopping restores the microphone. The ring is the health of the lag, the number the lag
-in seconds. Nothing here is a setting: what the app needs from you shows on the metrics line.
+Left click starts from LISTO and stops from then on; right click stops from any state,
+loading included. Stopping restores the microphone. The ring is the health of the lag, the
+number the lag in seconds. Nothing here is a setting: what the app needs from you shows on
+the metrics line. Both windows stay where they were dragged, from one run to the next.
 """
 
 from __future__ import annotations
@@ -11,8 +12,8 @@ import asyncio
 import ctypes
 from typing import Callable
 
-from PySide6.QtCore import QPoint, QRectF, Qt, QTimer
-from PySide6.QtGui import QColor, QFont, QPainter, QPen
+from PySide6.QtCore import QPoint, QRectF, QSettings, Qt, QTimer
+from PySide6.QtGui import QColor, QFont, QGuiApplication, QPainter, QPen
 from PySide6.QtWidgets import QApplication, QHBoxLayout, QLabel, QWidget
 
 from .overlay import Overlay
@@ -22,8 +23,13 @@ WDA_EXCLUDEFROMCAPTURE = 0x11
 SIZE = 112
 RING_PX = 8
 DRAG_PX = 4                    # moved less than this, it was a click
+PLACES = "logs/widget.ini"
 RING = {Health.NONE: "#6b7280", Health.OK: "#30a46c", Health.WARN: "#f5a623", Health.BAD: "#e5484d"}
-FIXED = {Phase.LOADING: "#6b7280", Phase.READY: "#8fd3ff", Phase.PAUSED: "#e5484d", Phase.RAW: "#f5a623", Phase.OFF: "#3f4650"}
+FIXED = {Phase.LOADING: "#6b7280", Phase.READY: "#8fd3ff", Phase.STARTING: "#8fd3ff", Phase.PAUSED: "#e5484d",
+         Phase.MUTED: "#e5484d", Phase.RAW: "#f5a623", Phase.STOPPING: "#6b7280", Phase.OFF: "#3f4650"}
+GLYPH = {Phase.LOADING: "…", Phase.STARTING: "…", Phase.PAUSED: "❚❚", Phase.MUTED: "✕", Phase.RAW: "!", Phase.STOPPING: "…",
+         Phase.OFF: "■"}
+RUNNING = (Phase.STARTING, Phase.LIVE, Phase.PAUSED, Phase.MUTED, Phase.RAW)
 FLAGS = (Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.FramelessWindowHint | Qt.WindowType.Tool
          | Qt.WindowType.WindowDoesNotAcceptFocus)
 
@@ -39,6 +45,11 @@ class _Floating(QWidget):
         self.hide_from_capture = hide_from_capture
         self._press: QPoint | None = None
         self._dragged = False
+
+    def place(self, default: QPoint) -> None:
+        """Where it was left last time, unless that screen is gone."""
+        saved = QSettings(PLACES, QSettings.Format.IniFormat).value(self.windowTitle())
+        self.move(saved if isinstance(saved, QPoint) and QGuiApplication.screenAt(saved) else default)
 
     def showEvent(self, event) -> None:
         super().showEvent(event)
@@ -59,6 +70,8 @@ class _Floating(QWidget):
             self.move(target)
 
     def mouseReleaseEvent(self, event) -> None:
+        if self._dragged:
+            QSettings(PLACES, QSettings.Format.IniFormat).setValue(self.windowTitle(), self.pos())
         self._press = None
 
 
@@ -75,7 +88,7 @@ class Button(_Floating):
         screen = QApplication.primaryScreen()
         if screen is not None:
             g = screen.availableGeometry()
-            self.move(g.x() + g.width() - SIZE - 24, g.y() + 24)
+            self.place(QPoint(g.x() + g.width() - SIZE - 24, g.y() + 24))
 
     def set_phase(self, phase: Phase) -> None:
         if phase is not self.phase:
@@ -91,7 +104,7 @@ class Button(_Floating):
             self.on_stop()
         elif self.phase is Phase.READY:
             self.on_start()
-        elif self.phase in (Phase.LIVE, Phase.PAUSED, Phase.RAW):
+        elif self.phase in RUNNING:
             self.on_stop()
 
     def mouseReleaseEvent(self, event) -> None:
@@ -104,7 +117,7 @@ class Button(_Floating):
             return "▶"
         if self.phase in (Phase.LIVE, Phase.PAUSED) and self.lag_s is not None:
             return f"{self.lag_s:.1f}"
-        return {Phase.LOADING: "…", Phase.PAUSED: "❚❚", Phase.RAW: "!", Phase.OFF: "■"}.get(self.phase, "–")
+        return GLYPH.get(self.phase, "–")
 
     def paintEvent(self, event) -> None:
         p = QPainter(self)
@@ -134,7 +147,7 @@ class MetricsLine(_Floating):
         screen = QApplication.primaryScreen()
         if screen is not None:
             g = screen.availableGeometry()
-            self.move(g.x() + 24, g.y() + 24)
+            self.place(QPoint(g.x() + 24, g.y() + 24))
 
     def set_text(self, text: str) -> None:
         self._label.setText(text)
@@ -173,11 +186,13 @@ class Screen:
     def vitals(self, lag_s: float | None, level: Health) -> None:
         self.button.set_vitals(lag_s, level)
 
+    def on_stop(self, fn: Callable[[], None]) -> None:
+        self.button.on_stop = fn
+
     async def go(self, stop: asyncio.Event) -> None:
         """Nothing is captured until the button is pressed."""
         start = asyncio.Event()
         self.button.on_start = start.set
-        self.button.on_stop = stop.set
         waiting = [asyncio.ensure_future(start.wait()), asyncio.ensure_future(stop.wait())]
         await asyncio.wait(waiting, return_when=asyncio.FIRST_COMPLETED)
         for w in waiting:

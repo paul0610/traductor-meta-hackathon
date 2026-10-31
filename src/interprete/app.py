@@ -53,7 +53,7 @@ from .safety import ExitGuard, Watchdog
 from .tts.backup import make_voice
 from .tts.edge import FAST_RATE_PCT
 from .turns.floor import Floor
-from .ui.status import Phase, health
+from .ui.status import Phase, health, metrics_line, running
 from .video.virtual_cam import VirtualCam
 
 MT_ERRORS = (TimeoutError, openai.APIError, json.JSONDecodeError, KeyError)
@@ -65,6 +65,7 @@ CATCH_UP_SYNC_S = 0.5           # with D > 0: the next clause would start this l
 SYNC_LATE_S = 1.0               # three clauses in a row this late: D is too short, the bar says so
 SYNC_LATE_STREAK = 3
 WORKERS = 2                     # concurrent Spark calls and syntheses, outgoing
+OFF_HOLD_S = 2.0                # the windows close with the process: APAGADO has to be seen first
 POLICIES = {"consecutive": Consecutive, "incremental": Incremental}
 NOTICE_EN = ("Hi, a quick note before we start: I speak Spanish and you are hearing an AI interpreter. "
              "It runs a few seconds behind me, so please give me a moment after you finish speaking.")
@@ -127,6 +128,9 @@ class Outgoing:
         self.video: VirtualCam | None = None
         self.video_warning = ""
         self.cable_warning = ""
+        self.opening = False                         # the camera takes seconds, off the loop
+        self.fault = ""                              # a task that died: stays on the line, the rest of it keeps moving
+        self.incoming: Incoming | None = None
         self.conversation = Conversation()           # shared with the incoming chain
         self.floor: Floor | None = None              # the incoming chain's, when there is one
         self.held = False                           # gave way: my clauses wait until their turn ends
@@ -146,6 +150,7 @@ class Outgoing:
         self.policy = POLICIES[self.args.mode](Channel.OUT, self.asr.clock.to_local, emit=self.emit)
 
     def start_audio(self) -> None:
+        self.t_start = now()
         if not self.args.wav_out:
             self.mic.start()
             ring = Ring(self.mixer.rate)
@@ -183,6 +188,8 @@ class Outgoing:
             print(f"AVISO: sin cámara retrasada, el otro lado ve tus labios {self.delay_s:.1f} s antes que la voz. "
                   f"¿OBS Studio instalado? {exc}", file=sys.stderr)
             return
+        finally:
+            self.opening = False
         self.video = video
         print(f"cámara {self.settings.camera_name} -> OBS Virtual Camera, {video.frames.delay_s:.2f} s tarde", file=sys.stderr)
 
@@ -379,16 +386,25 @@ class Outgoing:
             self.mixer.set_rest(rest)
 
     def bar_text(self, t: float) -> str:
-        lag = f"{self.lags[-1]:.1f}s p95 {np.percentile(self.lags, 95):.1f}s" if self.lags else "--"
-        link = " │ ASR CAÍDO" if self.asr is not None and self.asr.t_down is not None else ""
-        sync = ""
-        if self.delay_s > 0:
-            sync = f" │ SYNC {self.sync_err:+.1f}s (D {self.delay_s:.1f}s)"
-            if self.sync_late >= SYNC_LATE_STREAK:
-                sync += f" TARDE: reinicia con D {self.delay_s + 0.5:.1f}"
-        turn = " │ TURNO: ellos" if self.floor is not None and self.floor.theirs(t) else " │ TURNO: yo"
-        return (f"LAG {lag}{sync} │ CORR 0{turn} │ ES→EN {self.mixer.state.value}{link}{self.cable_warning}"
-                f"{self.video_warning}{self.voice.warning} │ META {(t - self.t_start) / 60:.0f} min")
+        notes = " │ ASR CAÍDO" if self.asr is not None and self.asr.t_down is not None else ""
+        if self.incoming is not None and self.incoming.asr is not None and self.incoming.asr.t_down is not None:
+            notes += " │ SUBTÍTULOS CAÍDOS"
+        notes += f"{self.cable_warning}{self.video_warning}{self.voice.warning}"
+        if not self.metrics.ok:
+            notes += " │ SIN MÉTRICAS"
+        line = metrics_line(lags=self.lags, sync_s=self.sync_err, delay_s=self.delay_s,
+                            late=self.sync_late >= SYNC_LATE_STREAK,
+                            corrections=self.policy.corrections_blocked if self.policy is not None else 0,
+                            theirs=self.floor is not None and self.floor.theirs(t), cable=self.mixer.state.value,
+                            minutes=(t - self.t_start) / 60, notes=notes)
+        return f"{self.fault} │ {line}" if self.fault else line
+
+    def ready_line(self) -> str:
+        dub = f"DOBLAJE D {self.delay_s:.1f}s" if self.delay_s > 0 else "SIN DOBLAJE"
+        return f"LISTO │ {dub} │ {self.voice.name}{self.voice.warning}"
+
+    def connected(self) -> bool:
+        return not self.opening and (self.asr is None or self.asr.clock.session_id is not None)
 
     async def controller(self) -> None:
         """TTS → rest once idle, watchdog, overlay line: all need the scheduler, so none lives in the callback."""
@@ -399,12 +415,13 @@ class Outgoing:
             self.watchdog.check(t)
             self.fallback(t)
             self.turns(t)
-            if t >= t_bar:
+            if t >= t_bar and not self.stop.is_set():
                 t_bar = t + 0.5
                 self.ui.bar(self.bar_text(t))
                 lag = self.lags[-1] if self.lags else None
                 self.ui.vitals(lag, health(lag, self.sync_err, self.delay_s))
-                self.ui.phase(Phase.RAW if self.mixer.latched else Phase.PAUSED if self.held else Phase.LIVE)
+                self.ui.phase(running(raw=self.mixer.latched, muted=self.mixer.state is State.MUTE, held=self.held,
+                                      connected=self.connected()))
             await asyncio.sleep(0.05)
 
     def send_notice(self) -> None:
@@ -452,6 +469,7 @@ class Outgoing:
         if self.asr is not None:
             jobs["out.asr"] = self.asr.run(self.q_pcm, self.on_asr_event, self.stop)
         if self.delay_s > 0 and not self.args.wav_out:
+            self.opening = True
             jobs["out.video"] = self.start_video()
         return jobs
 
@@ -579,12 +597,14 @@ class App:
         self.inc = None if args.out_only or args.simulate else Incoming(args, metrics, ui, self.stop)
         if self.out is not None and self.inc is not None:
             self.inc.conversation = self.out.conversation
+            self.out.incoming = self.inc
             if not args.no_yield:
                 self.out.floor = self.inc.floor
         self.spark: Spark | None = None
         self.mic_name = devices.find(settings.mic_name, "input", ("CABLE",)).name     # the one F10 brings back
         self.tasks: list[asyncio.Task] = []
         self.guard = ExitGuard(self.cleanup, lambda: self.loop.call_soon_threadsafe(self.stop.set))
+        self.restored = True
 
     @property
     def chains(self) -> list:
@@ -627,6 +647,7 @@ class App:
         if "keyboard" in sys.modules:
             sys.modules["keyboard"].unhook_all()
         r = restore_mic(self.mic_name, only_from="CABLE")
+        self.restored = r.ok
         self.emit("state", what="exit_restore", ok=r.ok, changed=r.changed, f10_s=r.elapsed_s, detail=r.detail)
 
     # --- run ---------------------------------------------------------------------------
@@ -640,11 +661,15 @@ class App:
         if task.cancelled() or task.exception() is None:
             return
         exc = task.exception()
-        self.emit("state", what="fatal", task=task.get_name(), error=repr(exc)[:300])
-        print(f"\r[error] {task.get_name()}: {exc!r}"[:300], file=sys.stderr)
-        self.ui.bar(f"ERROR {task.get_name()}: voz cruda en el cable")
-        if self.out is not None and task.get_name().startswith("out."):
-            self.out.mixer.kill()                    # a dead outgoing chain never leaves the cable mute
+        name = task.get_name()
+        self.emit("state", what="fatal", task=name, error=repr(exc)[:300])
+        print(f"\r[error] {name}: {exc!r}"[:300], file=sys.stderr)
+        fault = f"ERROR {name}: {'voz cruda en el cable' if name.startswith('out.') else 'sin subtítulos'}"
+        self.ui.bar(fault)
+        if self.out is not None:
+            self.out.fault = fault
+            if name.startswith("out."):
+                self.out.mixer.kill()                # a dead outgoing chain never leaves the cable mute
 
     async def warm(self) -> None:
         """First Spark call of a process is the slow one (measured: 2.4 s cold, 1.5 s warm)."""
@@ -653,6 +678,21 @@ class App:
             self.emit("state", what="spark_warm")
         except (*MT_ERRORS, EmptyTranslation) as exc:
             self.emit("state", what="spark_warm", error=f"{type(exc).__name__}: {exc}"[:300])
+
+    async def load(self) -> None:
+        if self.out is not None:                     # first: two voices in one call is worse than a later start
+            self.ui.mine("Cargando la voz…")
+            await self.out.voice.start()
+        if self.spark is not None:
+            await self.warm()
+
+    async def shut(self) -> None:
+        self.guard.run()
+        self.ui.phase(Phase.OFF)
+        self.ui.mine("Apagado. Micrófono físico restaurado." if self.restored
+                     else "Apagado. No pude restaurar el micrófono: revísalo en Sonido de Windows.")
+        if not self.args.no_overlay:
+            await asyncio.sleep(OFF_HOLD_S)
 
     async def fixtures(self) -> None:
         jobs = []
@@ -673,21 +713,30 @@ class App:
             self.spark = Spark(key, timeout_s=MT_TIMEOUT_S, glossary=load_glossary(self.settings.glossary_path))
             for c in self.chains:
                 c.setup(key, self.spark)
-        if self.out is not None:                     # first: two voices in one call is worse than a later start
-            self.ui.mine("Cargando la voz…")
-            await self.out.voice.start()
-        if self.spark is not None:
-            await self.warm()
-        self.ui.phase(Phase.READY)
-        self.ui.mine("Listo. Nada sale de esta PC hasta que pulses el botón.")
-        await self.ui.go(self.stop)
+        self.ui.on_stop(self.stop.set)
+        self.ui.bar("Cargando…")
+        loading = asyncio.ensure_future(self.load())     # 15 s or more, and the button has to work meanwhile
+        stopped = asyncio.ensure_future(self.stop.wait())
+        await asyncio.wait((loading, stopped), return_when=asyncio.FIRST_COMPLETED)
+        stopped.cancel()
+        if not self.stop.is_set():
+            await loading
+            self.ui.phase(Phase.READY)
+            self.ui.bar(self.out.ready_line() if self.out is not None else "LISTO")
+            self.ui.mine("Listo. Nada sale de esta PC hasta que pulses el botón.")
+            await self.ui.go(self.stop)
         if self.stop.is_set():
+            self.ui.phase(Phase.STOPPING)
+            self.ui.bar("Apagado")
+            loading.cancel()
+            await asyncio.gather(loading, return_exceptions=True)
             if self.out is not None:
                 await self.out.voice.close()
-            self.guard.run()
-            self.ui.phase(Phase.OFF)
+            await self.shut()
             return
-        self.ui.phase(Phase.LIVE)
+        self.ui.phase(Phase.STARTING)
+        self.ui.bar("Conectando…")
+        await asyncio.sleep(0.05)                    # opening the devices holds the screen 2 s: the press has to show first
         for c in self.chains:
             c.start_audio()
         self.hotkeys()
@@ -706,6 +755,8 @@ class App:
             self._task("app.fixtures", self.fixtures())
         try:
             await self.stop.wait()
+            self.ui.phase(Phase.STOPPING)
+            self.ui.mine("Apagando…")
             await asyncio.sleep(0.5)
         finally:
             for t in self.tasks:
@@ -713,9 +764,7 @@ class App:
             await asyncio.gather(*self.tasks, return_exceptions=True)
             for c in self.chains:
                 await c.close()
-            self.guard.run()
-            self.ui.phase(Phase.OFF)
-            self.ui.mine("Apagado. Micrófono físico restaurado.")
+            await self.shut()
 
     def report(self) -> None:
         for c in self.chains:
@@ -786,8 +835,7 @@ def main() -> None:
     timer.start(200)
     loop = QEventLoop(qt)
     asyncio.set_event_loop(loop)
-    with loop:
-        loop.run_until_complete(run_app(args, screen))
+    loop.run_until_complete(run_app(args, screen))   # never closed: that would wait for a model still loading
 
 
 if __name__ == "__main__":
