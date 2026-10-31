@@ -30,7 +30,6 @@ MAX_WORDS = 8                   # SPEC asks 6 to 10; D's arithmetic asks for the
 MAX_CLAUSE_S = 1.6              # every 0.4 s here is 0.4 s less of D, with the same translation over 6 runs
 PAUSE_S = 0.7                   # audio with no new word. Shorter cuts plain speech: at 0.4, 38 clauses for 32 and gate S failed
 WORD_LAG_S = 0.7                # a word starts this long before a partial first shows it (fixture truth, p50 0.69)
-TO_FIRST_WORD_S = 0.26          # `speechStart` reports a position this long before the first word (truth, p50 0.26)
 WORDS_BEFORE = 6                # how far back the line through the words looks
 CLOSES_CLAUSE = re.compile(r"[,.;:?!…]$")
 CONJUNCTIONS = frozenset({
@@ -109,7 +108,7 @@ class Incremental:
         clause = turn.words[start:start + n]
         last = start + n - 1
         if start == 0 and turn.t_start is not None:
-            t_src_start, source = turn.t_start + TO_FIRST_WORD_S, "speech_start"
+            t_src_start, source = turn.t_start, "speech_start"
         else:
             t_src_start, source = self._said_at(turn, start, last), "partial_arrival"
         t_end = self._said_at(turn, last + 1, last)

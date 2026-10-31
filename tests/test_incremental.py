@@ -1,6 +1,6 @@
 from interprete.clock import StreamClock
 from interprete.contracts import AsrEvent, AsrKind, Channel
-from interprete.policy.incremental import MAX_CLAUSE_S, MAX_WORDS, PAUSE_S, TO_FIRST_WORD_S, WORD_LAG_S, Incremental
+from interprete.policy.incremental import MAX_CLAUSE_S, MAX_WORDS, PAUSE_S, WORD_LAG_S, Incremental
 
 
 class Script:
@@ -162,7 +162,7 @@ def test_first_clause_starts_at_speech_start_later_ones_on_the_line_through_thei
     s.start()
     s.grow("Terminé el reporte ayer pero nadie lo leyó", step=0.4)
     s.send(AsrKind.SPEECH_END)
-    assert abs(s.commits[0].t_src_start - (101.0 + TO_FIRST_WORD_S)) < 1e-9
+    assert abs(s.commits[0].t_src_start - 101.0) < 1e-9
     assert s.commits[0].t_src_source == "speech_start"
     # "pero" first showed up in the 5th partial, audio position 1.0 + 4 × 0.4; evenly spaced words: right on the line
     assert abs(s.commits[1].t_src_start - (100.0 + 1.0 + 4 * 0.4 - WORD_LAG_S)) < 1e-9
