@@ -100,12 +100,16 @@ class Scheduler:
     def is_cancelled(self, utterance_id: str) -> bool:
         return utterance_id in self._cancelled
 
-    def yield_current(self) -> str | None:
-        """Turn yield: the chunk already handed to the mixer finishes, the rest of its utterance is dropped."""
-        utt = self._current_utterance
-        if utt is not None:
-            self.cancel_utterance(utt)
-        return utt
+    def give_way(self) -> list[int]:
+        """Their turn: what the mixer holds finishes, every clause behind it is dropped. Returns their seqs.
+
+        Clauses, not the utterance: I may go on talking, and what I say once they finish still counts.
+        """
+        dropped = sorted(s for s in set(self._ready) | set(self._expected) if s >= self._next_seq)
+        for s in dropped:
+            self._tombs[s] = "yielded"
+        self._wake.set()
+        return dropped
 
     def flush(self) -> None:
         """F9: drop everything queued and in flight, clear the mixer."""
@@ -120,6 +124,14 @@ class Scheduler:
         self._wake.set()
 
     # --- introspection ---------------------------------------------------------------
+
+    @property
+    def voice_ends_at(self) -> float:
+        return self._prev_end
+
+    def resolved(self, seq: int) -> bool:
+        """Nothing will play for this seq any more, so working on it is wasted."""
+        return seq < self._next_seq or seq in self._tombs
 
     def in_flight(self) -> int:
         """Commits registered but not yet played, tombstoned or skipped."""

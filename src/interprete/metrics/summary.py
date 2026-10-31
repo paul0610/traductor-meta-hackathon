@@ -68,6 +68,9 @@ def summarize(events: list[dict]) -> dict:
     return dict(
         out=dict(
             commits=len(out), played=sum(r.get("t_play_start") is not None for r in out),
+            yields=sum(e["ev"] == "turn" and e.get("what") == "yield" for e in events),
+            unsaid=sum(e["ev"] == "turn" and e.get("what") == "unsaid" for e in events),
+            fillers=sum(e["ev"] == "mt" and e.get("channel") == "out" and bool(e.get("filler")) for e in events),
             commit_to_mt_s=_stats(_diffs(out, "t_mt", "t_commit")),
             mt_to_tts_first_s=_stats(_diffs(out, "t_tts_first", "t_mt")),
             commit_to_first_pcm_s=_stats(_diffs(out, "t_play_start", "t_commit")),
@@ -101,8 +104,9 @@ def summarize(events: list[dict]) -> dict:
 def integrity_failures(s: dict) -> list[str]:
     o = s["out"]
     fails = []
-    if o["played"] < o["commits"]:
-        fails.append(f"lost clauses: {o['played']} of {o['commits']} played")
+    if o["played"] + o["unsaid"] + o["fillers"] < o["commits"]:
+        fails.append(f"lost clauses: {o['played']} of {o['commits']} played, {o['unsaid']} given up to the other side, "
+                     f"{o['fillers']} only fillers")
     if o["cable_gaps"]:
         fails.append(f"cable gaps: {o['cable_gaps']}")
     if o["bytes_pct"] is not None and o["bytes_pct"] < 100:

@@ -137,13 +137,32 @@ def test_cancelled_utterance_is_dropped_and_order_continues():
     assert sink.played == [(1, 3.0)]
 
 
-def test_yield_current_drops_rest_of_playing_utterance():
+def test_giving_way_finishes_what_plays_and_drops_the_rest():
+    s, sink, _ = make()
+    s.expect(0, "out:s:7", 0.0, 0.0)
+    s.submit(chunk(0, s, utt="out:s:7"))
+    s.step(1.0)
+    s.expect(1, "out:s:7", 1.0, 1.0)
+    s.submit(chunk(2, s, utt="out:s:8"))
+    assert s.give_way() == [1, 2]
+    assert s.voice_ends_at == 2.0
+    assert sink.cleared == 0
+    s.submit(chunk(1, s, utt="out:s:7"))
+    s.step(1.5)
+    assert sink.played == [(0, 1.0)]
+    assert s.in_flight() == 0
+
+
+def test_after_giving_way_later_clauses_of_the_same_utterance_play():
     s, sink, _ = make()
     s.submit(chunk(0, s, utt="out:s:7"))
     s.step(1.0)
-    assert s.yield_current() == "out:s:7"
+    s.expect(1, "out:s:7", 1.0, 1.0)
+    s.give_way()
+    assert s.resolved(1)
+    assert not s.resolved(2)
     s.submit(chunk(1, s, utt="out:s:7"))
-    s.submit(chunk(2, s, utt="out:s:8"))
+    s.submit(chunk(2, s, utt="out:s:7"))
     s.step(2.0)
     assert sink.played == [(0, 1.0), (2, 2.0)]
 
