@@ -20,7 +20,12 @@ SPARK_MODEL = "muse-spark-1.3"
 @dataclass(frozen=True, slots=True)
 class Settings:
     api_key: str | None
+    tts_engine: str
+    tts_backup: str
     tts_voice: str
+    pocket_model: str
+    pocket_voice: str
+    pocket_gain_db: float
     cable_name: str
     mic_name: str
     delay_s: float
@@ -35,7 +40,12 @@ class Settings:
 def load() -> Settings:
     return Settings(
         api_key=os.environ.get("MODEL_API_KEY") or None,
+        tts_engine=os.environ.get("RTT_TTS_ENGINE", "pocket"),
+        tts_backup=os.environ.get("RTT_TTS_BACKUP", "edge"),
         tts_voice=os.environ.get("RTT_TTS_VOICE", "en-US-GuyNeural"),
+        pocket_model=os.environ.get("RTT_POCKET_MODEL", "english"),
+        pocket_voice=os.environ.get("RTT_POCKET_VOICE", "michael"),
+        pocket_gain_db=float(os.environ.get("RTT_POCKET_GAIN_DB", "3")),
         cable_name=os.environ.get("RTT_CABLE_NAME", "CABLE Input"),
         mic_name=os.environ.get("RTT_MIC_NAME", "Realtek"),
         delay_s=float(os.environ.get("RTT_DELAY_S", "6.0")),

@@ -43,16 +43,16 @@ from .clock import now
 from .contracts import AsrEvent, AsrKind, Channel, Commit, PcmChunk
 from .metrics.jsonl import Metrics, read
 from .metrics.summary import summarize
-from .mt.spark import Spark
+from .mt.spark import EmptyTranslation, Spark
 from .policy.consecutivo import Consecutive
 from .policy.incremental import Incremental
 from .policy.scheduler import MT_TIMEOUT_S, TTS_TIMEOUT_S, Scheduler
 from .safety import ExitGuard, Watchdog
-from .tts.edge import FAST_RATE_PCT, isochrony_pct
-from .tts.edge_session import EdgeVoice
+from .tts.backup import make_voice
+from .tts.edge import FAST_RATE_PCT
 from .video.virtual_cam import VirtualCam
 
-MT_ERRORS = (TimeoutError, openai.APIError, json.JSONDecodeError, KeyError)
+MT_ERRORS = (TimeoutError, openai.APIError, json.JSONDecodeError, KeyError, EmptyTranslation)
 ASR_FALLBACK_S = 3.0            # ASR down this long: live voice, nothing can be translated
 CABLE_MIN_VOLUME = 0.95
 CATCH_UP_BACKLOG_S = 3.0        # behind by more than this: the next clause is spoken faster
@@ -104,7 +104,7 @@ class Outgoing:
             self.mixer.dub(self.delay, settings.voice_under_db)
         self.rest = self.mixer.rest
         self.sched = Scheduler(self.mixer, self.delay_s, emit=self._on_sched)
-        self.voice = EdgeVoice(settings.tts_voice, self.mixer.rate, size=WORKERS + 1, emit=self.emit)   # one spare
+        self.voice = make_voice(settings, self.mixer.rate, size=WORKERS + 1, emit=self.emit)   # one spare socket
         self.watchdog = Watchdog(self.mixer, self.sched, emit=self.emit)
         self.mic = MicCapture(settings.mic_name, emit=self.emit)
         self.q_pcm: asyncio.Queue = asyncio.Queue(maxsize=250)
@@ -150,7 +150,6 @@ class Outgoing:
                 self.mic.add_consumer(QueueFeeder(self.loop, self.q_pcm, To16k(self.mic.rate)))
             print(f"mic   {self.mic.device.name} [{self.mic.device.hostapi}] {self.mic.rate} Hz", file=sys.stderr)
         self.mixer.start()
-        self.loop.create_task(self.voice.start())
         print(f"cable {self.mixer.device.name} [{self.mixer.device.hostapi}] {self.mixer.rate} Hz "
               f"{self.mixer.channels} ch, state {self.mixer.state.value}", file=sys.stderr)
         self.check_cable_level()
@@ -250,9 +249,13 @@ class Outgoing:
             if c.text_tgt:                           # notice and simulate mode: already in English
                 await self.q_translated.put(c)
                 continue
+            def on_mt_hedge() -> None:
+                self.emit("mt", channel="out", seq=c.seq, utterance_id=c.utterance_id, hedged=True)
+
             try:
                 r = await asyncio.wait_for(self.spark.translate(c.text_src, prefix=c.prefix_src, history=self.recent(),
-                                                                fragment=self.args.mode == "incremental"), MT_TIMEOUT_S)
+                                                                fragment=self.args.mode == "incremental",
+                                                                on_hedge=on_mt_hedge), MT_TIMEOUT_S)
             except MT_ERRORS as exc:
                 self.sched.tombstone(c.seq, f"mt:{type(exc).__name__}")
                 self.emit("mt", channel="out", seq=c.seq, utterance_id=c.utterance_id, error=f"{type(exc).__name__}: {exc}"[:300])
@@ -279,7 +282,7 @@ class Outgoing:
 
             catch_up = self.behind(c, now())
             src_s = None if c.t_src_end is None else c.t_src_end - c.t_src_start
-            rate_pct = FAST_RATE_PCT if catch_up else isochrony_pct(c.text_tgt, src_s)
+            rate_pct = FAST_RATE_PCT if catch_up else self.voice.rate_for(c.text_tgt, src_s)
             try:
                 r = await asyncio.wait_for(self.voice.say(c.text_tgt, rate_pct=rate_pct, on_hedge=on_hedge), TTS_TIMEOUT_S)
             except Exception as exc:                 # network, decode, timeout: never stall the queue
@@ -324,7 +327,7 @@ class Outgoing:
             sync = f" │ SYNC {self.sync_err:+.1f}s (D {self.delay_s:.1f}s)"
             if self.sync_late >= SYNC_LATE_STREAK:
                 sync += f" TARDE: reinicia con D {self.delay_s + 0.5:.1f}"
-        return (f"LAG {lag}{sync} │ CORR 0 │ ES→EN {self.mixer.state.value}{link}{self.cable_warning}{self.video_warning}"
+        return (f"LAG {lag}{sync} │ CORR 0 │ ES→EN {self.mixer.state.value}{link}{self.cable_warning}{self.video_warning}{self.voice.warning}"
                 f" │ META {(t - self.t_start) / 60:.0f} min")
 
     async def controller(self) -> None:
@@ -399,7 +402,7 @@ class Outgoing:
                 self.emit("commit", phase="report", channel="out", **r)
         self.emit("run", seq_skipped=self.sched.seq_skipped, cable_gaps=self.mixer.cable_gaps,
                   watchdog_trips=self.watchdog.trips, mode=self.args.mode, tts_reconnects=self.voice.reconnects,
-                  delay_s=self.delay_s, voice_under_db=self.settings.voice_under_db if self.delay_s > 0 else None,
+                  tts_voice=self.voice.name, delay_s=self.delay_s, voice_under_db=self.settings.voice_under_db if self.delay_s > 0 else None,
                   delay_jumps=self.delay.jumps if self.delay is not None else 0,
                   corrections_blocked=self.policy.corrections_blocked if self.policy is not None else 0)
 
@@ -453,10 +456,14 @@ class Incoming:
         while True:
             c = await self.q_commits.get()
             row = self.rows[c.seq]
+            def on_mt_hedge() -> None:
+                self.emit("mt", channel="in", seq=c.seq, utterance_id=c.utterance_id, hedged=True)
+
             try:
                 r = await asyncio.wait_for(self.spark.translate(c.text_src, src="en", tgt="es", prefix=c.prefix_src,
                                                                 history=self.history[-4:],
-                                                                fragment=self.args.mode == "incremental"), MT_TIMEOUT_S)
+                                                                fragment=self.args.mode == "incremental",
+                                                                on_hedge=on_mt_hedge), MT_TIMEOUT_S)
             except MT_ERRORS as exc:
                 self.ui.their_failed(c.text_src)
                 self.emit("mt", channel="in", seq=c.seq, utterance_id=c.utterance_id, error=f"{type(exc).__name__}: {exc}"[:300])
@@ -585,6 +592,9 @@ class App:
             self.spark = Spark(key, timeout_s=MT_TIMEOUT_S)
             for c in self.chains:
                 c.setup(key, self.spark)
+        if self.out is not None:                     # first: two voices in one call is worse than a later start
+            self.ui.mine("Cargando la voz…")
+            await self.out.voice.start()
         for c in self.chains:
             c.start_audio()
         self.hotkeys()

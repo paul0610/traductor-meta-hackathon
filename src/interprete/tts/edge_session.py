@@ -35,7 +35,7 @@ from edge_tts.exceptions import NoAudioReceived
 
 from ..clock import now
 from ..hedge import hedged
-from .edge import TtsResult, finish, synthesize
+from .edge import TtsResult, finish, isochrony_pct, synthesize
 
 HEDGE_AFTER_S = 1.2             # a healthy socket answers a whole clause in 1 s at worst
 RECONNECT_S = 2.0
@@ -105,6 +105,8 @@ class Socket:
 
 
 class EdgeVoice:
+    warning = ""
+
     def __init__(self, voice: str, out_rate: int, *, size: int = 2, emit: Callable[..., None] | None = None,
                  make_socket: Callable[[str], Socket] = Socket) -> None:
         self.voice = voice
@@ -117,6 +119,13 @@ class EdgeVoice:
         self._keeper: asyncio.Task | None = None
         self._sockets: list[Socket] = []
         self.reconnects = 0
+
+    @property
+    def name(self) -> str:
+        return f"edge:{self.voice}"
+
+    def rate_for(self, text: str, src_s: float | None) -> int:
+        return isochrony_pct(text, src_s)
 
     async def start(self) -> None:
         """Opens every socket before the first clause needs one; a failure just leaves it to `_reopen`."""

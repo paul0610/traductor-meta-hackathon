@@ -97,14 +97,15 @@ async def synthesize(text: str, voice: str, out_rate: int, *, rate_pct: int = 0)
     return await finish(bytes(buf), out_rate, t_request, t_first, now())
 
 
-def isochrony_pct(text: str, src_s: float | None) -> int:
-    """Edge `rate` that brings the voice close to the clause it translates (SPEC §4.1, ±15 % goal).
+def isochrony_pct(text: str, src_s: float | None, s_per_char: float = S_PER_CHAR, s_per_clause: float = S_PER_CLAUSE) -> int:
+    """`rate` that brings the voice close to the clause it translates (SPEC §4.1, ±15 % goal).
 
     Only ever faster: slower would add lag at D = 0, and the capped case still
     leaves the voice intelligible. A clause cut short by the ASR can look tiny,
-    so `src_s` is floored at the length of one short word in the voice.
+    so `src_s` is floored at the length of one short word in the voice. The
+    two seconds-per constants are Edge's; another voice passes its own.
     """
     if src_s is None:
         return 0
-    expected_s = S_PER_CHAR * len(text) + S_PER_CLAUSE
+    expected_s = s_per_char * len(text) + s_per_clause
     return FAST_RATE_PCT if expected_s / max(src_s, MIN_SRC_S) - 1.0 >= ISOCHRONY_EXCESS else 0

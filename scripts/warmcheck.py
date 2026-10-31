@@ -11,6 +11,7 @@ import asyncio
 import json
 import re
 import sys
+import time
 
 import numpy as np
 import pyaudiowpatch as pyaudio
@@ -24,6 +25,7 @@ from interprete.audio import devices
 from interprete.audio.device_restore import endpoint_volume
 from interprete.mt.spark import Spark
 from interprete.tts.edge import synthesize
+from interprete.tts.pocket import PocketVoice
 from interprete.video.virtual_cam import HEIGHT, WIDTH, measure_webcam, open_virtual_camera
 
 HEADPHONE_HINTS = ("auricular", "headphone", "headset", "bose", "airpods", "buds", "audífono", "audifono", "manos libres")
@@ -97,13 +99,34 @@ def check_camera(s: config.Settings) -> None:
         report("FALLA", "cámara virtual", f"{exc}. Instala OBS Studio una vez: winget install OBSProject.OBSStudio")
 
 
-async def check_tts(s: config.Settings) -> None:
+async def check_pocket(s: config.Settings) -> None:
+    """The first run downloads the model; after that it needs no network."""
+    t0 = time.perf_counter()
+    try:
+        voice = PocketVoice(s.pocket_model, s.pocket_voice, 48000, gain_db=s.pocket_gain_db)
+        await voice.start()
+        r = await voice.say("Testing the voice.")
+        report("OK" if r.pcm else "FALLA", "Pocket TTS", f"{s.pocket_model}, {s.pocket_voice}: lista en "
+               f"{time.perf_counter() - t0:.0f} s, frase en {r.t_ready - r.t_request:.2f} s")
+    except Exception as exc:
+        report("AVISO" if s.tts_backup == "edge" else "FALLA", "Pocket TTS", repr(exc)[:200])
+
+
+async def check_edge(s: config.Settings) -> None:
+    trouble = "AVISO" if s.tts_engine == "pocket" else "FALLA"       # only the backup: the call can go on
     try:
         r = await asyncio.wait_for(synthesize("Testing the voice.", s.tts_voice, 48000), 6.0)
         x = np.frombuffer(r.pcm, "<i2")
-        report("OK" if len(x) else "FALLA", "Edge TTS", f"{s.tts_voice}, primer byte {r.t_first - r.t_request:.2f} s")
+        report("OK" if len(x) else trouble, "Edge TTS", f"{s.tts_voice}, primer byte {r.t_first - r.t_request:.2f} s")
     except Exception as exc:
-        report("FALLA", "Edge TTS", repr(exc)[:200])
+        report(trouble, "Edge TTS", repr(exc)[:200])
+
+
+async def check_tts(s: config.Settings) -> None:
+    if s.tts_engine == "pocket":
+        await check_pocket(s)
+    if s.tts_engine == "edge" or s.tts_backup == "edge":
+        await check_edge(s)
 
 
 async def check_meta(key: str) -> None:
