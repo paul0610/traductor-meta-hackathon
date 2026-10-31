@@ -1,5 +1,7 @@
+import numpy as np
+
 from interprete.metrics.summary import gate_60s, gate_a, gate_s, summarize
-from interprete.metrics.truth import clause_truth
+from interprete.metrics.truth import clause_truth, turn_onsets
 
 
 def out_row(seq, lag):
@@ -81,6 +83,31 @@ def test_clause_truth_finds_the_first_word_even_if_the_asr_changed_others():
     assert clause_truth(rows, words, 100.0) == {3: 100.0, 4: 103.0}
 
 
+def speech(segments, seconds=6.0, rate=16000):
+    rng = np.random.default_rng(0)
+    x = rng.normal(0, 0.001, int(seconds * rate))
+    for a, b in segments:
+        x[int(a * rate): int(b * rate)] += rng.normal(0, 0.1, int(b * rate) - int(a * rate))
+    return x.astype(np.float32)
+
+
+def test_a_turn_opens_where_speech_starts_after_a_pause():
+    found = turn_onsets(speech([(1.0, 2.0), (3.0, 4.5)]), 16000, 100.0)
+    assert np.allclose(found, [101.0, 103.0], atol=0.03)
+
+
+def test_a_breath_inside_speech_opens_no_turn():
+    assert len(turn_onsets(speech([(1.0, 2.0), (2.2, 3.0), (4.0, 5.0)]), 16000, 0.0)) == 2
+
+
+def test_a_click_opens_no_turn():
+    assert len(turn_onsets(speech([(1.0, 1.04), (3.0, 4.5)]), 16000, 0.0)) == 1
+
+
+def test_silence_has_no_turns():
+    assert turn_onsets(np.zeros(16000, np.float32), 16000, 0.0) == []
+
+
 def test_clause_truth_leaves_out_a_clause_whose_first_word_changed():
-    words = [dict(text=w, t=float(i)) for i, w in enumerate("cinco años de experiencia".split())]
+    words =[dict(text=w, t=float(i)) for i, w in enumerate("cinco años de experiencia".split())]
     assert clause_truth([dict(seq=0, text_src="5 años"), dict(seq=1, text_src="de experiencia")], words, 0.0) == {1: 2.0}

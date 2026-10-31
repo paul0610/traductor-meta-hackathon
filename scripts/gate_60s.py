@@ -21,7 +21,7 @@ from interprete.metrics.summary import gate_60s, gate_a, summarize
 
 def run_app(fixtures: bool, seconds: float) -> Path:
     before = set(Path("logs").glob("app_*.jsonl"))
-    cmd = [sys.executable, "-m", "interprete.app", "--record-cable", "--no-overlay", "--no-yield"]
+    cmd = [sys.executable, "-m", "interprete.app", "--record-cable", "--no-overlay", "--no-yield", "--delay", "0"]
     if fixtures:
         cmd += ["--wav-out", "logs/fixture_es.wav", "--wav-in", "logs/fixture_en.wav"]
     else:

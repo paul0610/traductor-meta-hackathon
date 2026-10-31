@@ -18,7 +18,7 @@ Work in progress during the hackathon week. Daily logs with measured numbers liv
 | Incoming chain: loopback → ASR → Spark → subtitles | done, measured on real system audio |
 | Safety: silent rest state, F9 latch, F10 via Core Audio, watchdog, restore on exit | done, physical keys pending |
 | Incremental clause commits (LA-2), both directions | done, measured on synthetic voices |
-| Synchronized dub with fixed delay D | audio measured on synthetic voices, delayed camera running through the OBS driver; clap calibration and a real call still to do |
+| Synchronized dub with fixed delay D | audio measured on synthetic voices, picture and sound calibrated with real claps (+23 ms); a real voice and a real call still to do |
 | Spanglish: English that falls into Spanish comes out as one English voice | done and measured on a synthetic voice; the ASR sometimes drops whole Spanish passages |
 | Turns: their sustained speech takes the floor from my voice | done, measured with both fixtures talking over each other |
 | Context: the whole conversation and a glossary reach Spark | done, measured on latency and on ambiguous clauses |
@@ -57,9 +57,11 @@ Before a call, `uv run python scripts/warmcheck.py` tests everything a call need
 | F9 | Your raw voice on the cable, latched; F9 again to interpret again |
 | F10 | F9, plus the physical mic back as the Windows default |
 
-To check it without speaking: `uv run python scripts/make_fixtures.py`, then `uv run python scripts/gate_60s.py --fixtures` runs both chains on synthetic voices and judges the run from its log. `uv run python scripts/gate_sync.py` does the same for the dub, and also compares each clause's timing against the real word times of the fixture.
+To check it without speaking: `uv run python scripts/make_fixtures.py`, then `uv run python scripts/gate_60s.py --fixtures` runs both chains on synthetic voices and judges the run from its log. `uv run python scripts/gate_sync.py` does the same for the dub, and also compares each clause's timing against the real word times of the fixture. With `--voice` it runs on your own voice and camera for 60 s, checks where each turn opens against the microphone, and leaves in `logs/` a 20 s clip of what the other side gets.
 
 **Synchronized dub** (`RTT_DUB=1` or `--dub`): the other side gets my video and voice D seconds late, so the English voice starts and stops with my lips. Needs OBS Studio installed once for its virtual camera driver; OBS itself stays closed. Pick `OBS Virtual Camera` in the call, and run `uv run python scripts/calibrate_av_offset.py` once to line up picture and voice. The self-view shows the delayed video, and with a shared screen the cursor runs D seconds ahead of the voice, so turn the dub off to share.
+
+**Level on the cable.** Windows has two sliders that scale everything the call hears: the one on `CABLE Input`, and the one it keeps for each app in the volume mixer, which it remembers between runs. The bar shows `CABLE 22 %` or `PYTHON 3 %` if either is low.
 
 Dependencies are pinned exactly and locked (`uv.lock`), resolved with a supply-chain cooldown (`exclude-newer = "2026-10-22"`).
 

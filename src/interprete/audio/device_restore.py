@@ -5,19 +5,23 @@ one the capture actually opened, so a laptop's jack mic with the same vendor in
 its name is never picked. Roles are all three (console, multimedia,
 communications): call apps listen to the last one.
 
-`endpoint_volume` only reads: a low Windows slider on `CABLE Input` scales the
-whole translated voice before the call app sees it, and no log would show it.
+`endpoint_volume` and `app_volume` only read: a low Windows slider on `CABLE Input`
+scales the whole translated voice before the call app sees it, and no log would show
+it. There are two: the device's, and the one Windows keeps per app and per device in
+the volume mixer, which it remembers across runs and only exists while the app sounds.
 """
 
 from __future__ import annotations
 
+import os
 import threading
 from dataclasses import dataclass
 from typing import Any, Callable
 
 import comtypes
+from pycaw.api.audiopolicy import IAudioSessionControl2
 from pycaw.constants import DEVICE_STATE, EDataFlow, ERole
-from pycaw.utils import AudioUtilities
+from pycaw.utils import AudioSession, AudioUtilities
 
 from ..clock import now
 
@@ -92,6 +96,23 @@ def endpoint_volume(name: str, flow: EDataFlow = EDataFlow.eRender) -> tuple[flo
             if (d.FriendlyName or "").startswith(name):
                 v = d.EndpointVolume
                 return float(v.GetMasterVolumeLevelScalar()), bool(v.GetMute())
+        return None
+
+    res = _on_com_thread(read)
+    return None if isinstance(res, Exception) else res
+
+
+def app_volume(name: str) -> float | None:
+    """This process's slider (0–1) in the volume mixer for the render endpoint `name`; None if it has no stream open there."""
+
+    def read() -> float | None:
+        for d in AudioUtilities.GetAllDevices(EDataFlow.eRender.value, DEVICE_STATE.ACTIVE.value):
+            if (d.FriendlyName or "").startswith(name):
+                sessions = d.AudioSessionManager.GetSessionEnumerator()
+                for i in range(sessions.GetCount()):
+                    s = AudioSession(sessions.GetSession(i).QueryInterface(IAudioSessionControl2))
+                    if s.ProcessId == os.getpid():
+                        return float(s.SimpleAudioVolume.GetMasterVolume())
         return None
 
     res = _on_com_thread(read)

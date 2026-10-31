@@ -21,6 +21,7 @@ import json
 import os
 import sys
 import time
+from contextlib import nullcontext
 from pathlib import Path
 
 import numpy as np
@@ -33,7 +34,7 @@ from .audio import devices
 from .audio.cable_mixer import CableMixer, State
 from .audio.capture import MicCapture, QueueFeeder, To16k
 from .audio.delay import DelayLine
-from .audio.device_restore import endpoint_volume, restore_mic
+from .audio.device_restore import app_volume, endpoint_volume, restore_mic
 from .audio.fixture import RATE as FIXTURE_RATE
 from .audio.fixture import read_wav, replay
 from .audio.loopback import LoopbackCapture
@@ -189,11 +190,16 @@ class Outgoing:
         vol = endpoint_volume(self.settings.cable_name)
         if vol is None:
             return
-        self.emit("state", what="cable_volume", volume=vol[0], mute=vol[1])
+        own = app_volume(self.settings.cable_name)
+        self.emit("state", what="cable_volume", volume=vol[0], mute=vol[1], app_volume=own)
         if vol[0] < CABLE_MIN_VOLUME or vol[1]:
             self.cable_warning = f" │ CABLE {vol[0] * 100:.0f} %{' MUDO' if vol[1] else ''}"
             print(f"AVISO: {self.settings.cable_name} está al {vol[0] * 100:.0f} %{' y mudo' if vol[1] else ''} en Windows: "
                   "el otro lado te oirá muy bajo. Súbelo a 100 en Sonido > Salida > CABLE Input.", file=sys.stderr)
+        if own is not None and own < CABLE_MIN_VOLUME:
+            self.cable_warning += f" │ PYTHON {own * 100:.0f} %"
+            print(f"AVISO: Python está al {own * 100:.0f} % en el mezclador de volumen de Windows: el otro lado te oirá "
+                  "muy bajo. Súbelo a 100 en Sistema > Sonido > Mezclador de volumen, con la app en marcha.", file=sys.stderr)
 
     def fixture_tap(self):
         """The fixture also stands in for the mic on the delay line, so a dub can be judged with no one speaking."""
@@ -718,19 +724,18 @@ async def run_app(args, ui) -> None:
     stamp = time.strftime("%Y%m%d_%H%M%S")
     metrics = Metrics(Path("logs") / f"app_{stamp}.jsonl")
     app = App(args, settings, metrics, ui)
-    rec = Recorder() if args.record_cable else None
+    recs = {"cable": Recorder() if args.record_cable else None,
+            "mic": Recorder(settings.mic_name) if args.record_mic else None}
     try:
-        if rec:
-            with rec:
-                await app.run()
-        else:
+        with recs["cable"] or nullcontext(), recs["mic"] or nullcontext():
             await app.run()
     finally:
         app.report()
-        if rec:
-            path = rec.save(Path("logs") / f"cable_app_{stamp}.wav")
-            metrics.emit("state", what="cable_recording", path=str(path), t_start=rec.signal()[0])
-            print(f"cable recording: {path}")
+        for name, rec in recs.items():
+            if rec:
+                path = rec.save(Path("logs") / f"{name}_app_{stamp}.wav")
+                metrics.emit("state", what=f"{name}_recording", path=str(path), t_start=rec.signal()[0])
+                print(f"{name} recording: {path}")
         metrics.close()
     print(json.dumps(summarize(read(metrics.path)), indent=2, ensure_ascii=False))
     print(f"metrics: {metrics.path}")
@@ -741,6 +746,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     ap.add_argument("--simulate", action="store_true", help="no API key: canned commits through TTS → cable")
     ap.add_argument("--sim-f9", action="store_true", help="with --simulate: press F9 programmatically mid-chunk")
     ap.add_argument("--record-cable", action="store_true", help="record CABLE Output to logs/")
+    ap.add_argument("--record-mic", action="store_true", help="record the microphone to logs/, as truth for gate S")
     ap.add_argument("--seconds", type=float, default=None)
     ap.add_argument("--dub", action="store_true", default=config.load().dub,
                     help="synchronized dub with D = RTT_DELAY_S; only makes sense with the delayed camera")
