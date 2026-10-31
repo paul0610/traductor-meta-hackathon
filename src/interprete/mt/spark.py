@@ -10,12 +10,15 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from typing import Callable
 
 from openai import AsyncOpenAI
 
 from .. import config
 from ..clock import now
+from ..hedge import hedged
 
+HEDGE_AFTER_S = 2.0            # p99 of 1060 clauses is 2.3 s; a stuck call is what loses a clause at the 4 s limit
 LANG = {"es": "Spanish", "en": "English"}
 
 SYSTEM = (
@@ -48,6 +51,10 @@ SCHEMA = {
 }
 
 
+class EmptyTranslation(Exception):
+    pass
+
+
 @dataclass(slots=True)
 class MtResult:
     translation: str
@@ -66,7 +73,9 @@ class Spark:
         self.effort = effort
 
     async def translate(self, text: str, *, src: str = "es", tgt: str = "en", prefix: str = "",
-                        history: list[tuple[str, str]] | None = None, fragment: bool = False) -> MtResult:
+                        history: list[tuple[str, str]] | None = None, fragment: bool = False,
+                        on_hedge: Callable[[], None] | None = None) -> MtResult:
+        """A failed or empty answer is asked again at once, and a slow one races a second call."""
         system = SYSTEM.format(src=LANG[src], tgt=LANG[tgt]) + (FRAGMENT if fragment else "")
         messages = [{"role": "system", "content": system}]
         for said, translated in history or []:
@@ -74,12 +83,17 @@ class Spark:
             messages.append({"role": "assistant", "content": json.dumps({"translation": translated})})
         content = text if not prefix else f"[already interpreted earlier in this sentence: {prefix}]\n{text}"
         messages.append({"role": "user", "content": content})
+        return await hedged(lambda: self._call(messages), lambda: self._call(messages), HEDGE_AFTER_S, on_hedge)
+
+    async def _call(self, messages: list[dict]) -> MtResult:
         t_start = now()
         resp = await self.client.chat.completions.create(
             model=self.model, messages=messages, response_format=SCHEMA, reasoning_effort=self.effort,
         )
         t_end = now()
         out = json.loads(resp.choices[0].message.content)["translation"].strip()
+        if not out:
+            raise EmptyTranslation
         usage = resp.usage
         details = getattr(usage, "completion_tokens_details", None) if usage else None
         return MtResult(out, t_start, t_end, self.effort,
