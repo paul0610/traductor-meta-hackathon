@@ -23,6 +23,7 @@ import sys
 import threading
 import time
 import wave
+import winsound
 from pathlib import Path
 
 import numpy as np
@@ -37,7 +38,8 @@ from interprete.metrics.truth import clause_truth, turn_onsets
 
 FIXTURE = Path("logs/fixture_es.wav")
 VOICE_S = 60.0
-AFTER_S = 15.0                 # the speaker is looking at the camera, not at "Ya puedes callar"
+AFTER_S = 15.0
+BEEP = (880, 400)              # the speaker is looking at the camera, not at the terminal
 CLIP_S = 20.0
 CLIP_SOURCE = "video=OBS Virtual Camera:audio=CABLE Output (VB-Audio Virtual Cable)"
 MATCH_S = 1.0                  # a turn further than this from a clause's start is not that clause's
@@ -92,12 +94,14 @@ def run_voice(delay: float | None) -> Path:
         if app.poll() is not None:
             raise SystemExit("La app terminó sin abrir la cámara: mira el aviso de arriba.")
     t_go = time.monotonic()
-    print("\n¡HABLA YA! Español, 60 s, mirando a la cámara, con una pausa de un segundo entre frases.\n", flush=True)
+    print("\n¡HABLA YA! Español, mirando a la cámara, con una pausa de un segundo entre frases, hasta el segundo pitido.\n", flush=True)
+    winsound.Beep(*BEEP)
     time.sleep(d + 1.0)
     clip_path = Path("logs") / f"clip_{time.strftime('%Y%m%d_%H%M%S')}.mp4"
     clip = record_clip(clip_path)
     time.sleep(max(0.0, t_go + VOICE_S - time.monotonic()))
     print("\nYa puedes callar. Unos segundos más para que salga lo que falta.\n", flush=True)
+    winsound.Beep(*BEEP)
     app.wait()
     clip.wait()
     print(f"clip de lo que ve el otro lado: {clip_path}")
