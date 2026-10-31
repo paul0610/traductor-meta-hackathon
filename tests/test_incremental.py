@@ -1,6 +1,6 @@
 from interprete.clock import StreamClock
 from interprete.contracts import AsrEvent, AsrKind, Channel
-from interprete.policy.incremental import MAX_CLAUSE_S, MAX_WORDS, TO_FIRST_WORD_S, WORD_LAG_S, Incremental
+from interprete.policy.incremental import MAX_CLAUSE_S, MAX_WORDS, PAUSE_S, TO_FIRST_WORD_S, WORD_LAG_S, Incremental
 
 
 class Script:
@@ -32,6 +32,11 @@ class Script:
         """One more word per partial, like the real stream; 5 words/s stays clear of the time cut."""
         w = sentence.split()
         self.partials(*(" ".join(w[:i]) for i in range(1, len(w) + 1)), step=step)
+
+    def hold(self, seconds, step=0.2):
+        """Silence after `grow`: the stream position moves on and no partial comes."""
+        self.t += seconds - step
+        return self.send(AsrKind.PROGRESS)
 
     def texts(self):
         return [c.text_src for c in self.commits]
@@ -185,3 +190,53 @@ def test_empty_turn_is_nothing():
     s.start()
     assert s.send(AsrKind.SPEECH_COMPLETE, "  ") is None
     assert s.commits == []
+
+
+def test_a_pause_closes_the_clause_with_its_last_word():
+    s = Script()
+    s.start()
+    s.grow("Hoy terminé el reporte")
+    assert s.commits == []
+    s.hold(PAUSE_S)
+    assert s.texts() == ["Hoy terminé el reporte"]
+    assert s.commits[0].boundary == "pause"
+
+
+def test_a_word_still_recent_does_not_close_it():
+    s = Script()
+    s.start()
+    s.grow("Hoy terminé el reporte")
+    assert s.hold(PAUSE_S - 0.05) is None
+
+
+def test_a_pause_leaves_a_short_clause_open():
+    s = Script()
+    s.start()
+    s.grow("Hoy terminé")
+    assert s.hold(PAUSE_S * 3) is None
+    s.grow("Hoy terminé el reporte del cliente grande")
+    assert s.commits[0].text_src.startswith("Hoy terminé")
+
+
+def test_a_pause_keeps_a_soft_opener_for_the_next_clause():
+    s = Script()
+    s.start()
+    s.grow("Hoy hablé con el equipo de")
+    s.hold(PAUSE_S)
+    assert s.texts() == ["Hoy hablé con el equipo"]
+
+
+def test_the_clause_after_a_pause_takes_up_where_it_stopped():
+    s = Script()
+    s.start()
+    s.grow("Hoy terminé el reporte")
+    s.hold(PAUSE_S)
+    s.grow("Hoy terminé el reporte para todo el equipo mañana")
+    s.send(AsrKind.SPEECH_END)
+    assert " ".join(s.texts()) == "Hoy terminé el reporte para todo el equipo mañana"
+
+
+def test_progress_outside_a_turn_does_nothing():
+    s = Script()
+    assert s.hold(PAUSE_S) is None
+    assert s.p._turns == {}

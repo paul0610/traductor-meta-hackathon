@@ -2,7 +2,8 @@
 
 A word is stable once two consecutive CUMULATIVE partials agree on it (local
 agreement, n = 2). Over the stable words a clause is cut at punctuation, before a
-conjunction, after MAX_WORDS or after MAX_CLAUSE_S of speech; `speechEnd` and
+conjunction, after MAX_WORDS or after MAX_CLAUSE_S of speech. A pause closes it
+too, last word included: no partial is coming to confirm that word. `speechEnd` and
 `speechComplete` flush what is left. What is committed is never revised: a later
 partial that disagrees only counts as `corrections_blocked`.
 
@@ -27,6 +28,7 @@ from ..metrics.asr_stats import lcp
 MIN_WORDS = 3                   # punctuation or a conjunction never cuts a shorter clause
 MAX_WORDS = 8                   # SPEC asks 6 to 10; D's arithmetic asks for the short end
 MAX_CLAUSE_S = 1.6              # every 0.4 s here is 0.4 s less of D, with the same translation over 6 runs
+PAUSE_S = 0.7                   # audio with no new word. Shorter cuts plain speech: at 0.4, 38 clauses for 32 and gate S failed
 WORD_LAG_S = 0.7                # a word starts this long before a partial first shows it (fixture truth, p50 0.69)
 TO_FIRST_WORD_S = 0.26          # `speechStart` reports a position this long before the first word (truth, p50 0.26)
 WORDS_BEFORE = 6                # how far back the line through the words looks
@@ -163,11 +165,20 @@ class Incremental:
         cut = self._cut(turn, stable, t)
         return None if cut is None else self._make(turn, ev, cut[0], cut[1])
 
+    def _on_progress(self, turn: _Turn, ev: AsrEvent) -> Commit | None:
+        new = turn.words[len(turn.committed):]
+        if len(new) < MIN_WORDS or self._position(ev) - turn.first_seen[-1] < PAUSE_S:
+            return None
+        return self._make(turn, ev, self._back_up(new), "pause")
+
     def _flush(self, turn: _Turn, ev: AsrEvent, boundary: str) -> Commit | None:
         n = len(turn.words) - len(turn.committed)
         return None if n <= 0 else self._make(turn, ev, n, boundary)
 
     def on_event(self, ev: AsrEvent) -> Commit | None:
+        if ev.kind is AsrKind.PROGRESS:
+            turn = self._turns.get(self._key(ev))
+            return None if turn is None else self._on_progress(turn, ev)
         if ev.kind not in (AsrKind.SPEECH_START, AsrKind.PARTIAL, AsrKind.SPEECH_END, AsrKind.SPEECH_COMPLETE):
             return None
         turn = self._turns.setdefault(self._key(ev), _Turn())
