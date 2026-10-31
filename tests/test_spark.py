@@ -14,10 +14,12 @@ class FakeCompletions:
     def __init__(self, script):
         self.script = list(script)
         self.calls = 0
+        self.systems = []
 
     async def create(self, **kw):
         wait, text = self.script.pop(0)
         self.calls += 1
+        self.systems.append(kw["messages"][0]["content"])
         await asyncio.sleep(wait)
         if isinstance(text, Exception):
             raise text
@@ -30,6 +32,14 @@ def with_script(script):
     fake = FakeCompletions(script)
     spark.client = SimpleNamespace(chat=SimpleNamespace(completions=fake))
     return spark, fake
+
+
+def test_spanglish_rules_go_only_from_spanish():
+    spark, fake = with_script([(0.0, "Good morning"), (0.0, "Buenos días")])
+    asyncio.run(spark.translate("Buenos días"))
+    asyncio.run(spark.translate("Good morning", src="en", tgt="es"))
+    assert "cómo se dice" in fake.systems[0]
+    assert "cómo se dice" not in fake.systems[1]
 
 
 def test_a_clean_answer_takes_one_call():

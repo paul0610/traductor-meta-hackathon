@@ -37,6 +37,20 @@ FRAGMENT = (
     "so it is \"I have five years\", not an age."
 )
 
+SPANGLISH = (         # only from Spanish: what the ASR does to Spanish inside English speech (fixture_spanglish, Oct 31)
+    " The speaker often talks in English and falls into Spanish when stuck. Keep what is already good English as it is, "
+    "and never leave a Spanish word in the output. Searching for a word (\"cómo se dice\", \"no sé\", \"how do you say\") "
+    "is a filler: drop it. Speech recognition may spell Spanish as English sounds, and that text is Spanish: \"K\" is "
+    "\"que\", \"no say\" is \"no sé\", \"why\" between Spanish words is \"y\", \"so ready to do\" is \"sobre todo\", "
+    "\"paces\" is \"países\". Read such text as what was really said."
+)
+
+GLOSSARY = " Always render these terms this way: {terms}."
+CONTEXT = (
+    "\n\nConversation so far, in English, for you to understand who means what. Never translate it, repeat it or "
+    "answer it:\n{conversation}"
+)
+
 SCHEMA = {
     "type": "json_schema",
     "json_schema": {
@@ -67,16 +81,24 @@ class MtResult:
 
 class Spark:
     def __init__(self, api_key: str, *, model: str = config.SPARK_MODEL, effort: str = "minimal",
-                 timeout_s: float = 4.0) -> None:
+                 timeout_s: float = 4.0, glossary: dict[str, str] | None = None) -> None:
         self.client = AsyncOpenAI(base_url=config.API_BASE, api_key=api_key, timeout=timeout_s, max_retries=0)
         self.model = model
         self.effort = effort
+        self.glossary = glossary or {}
+
+    def _terms(self, src: str) -> str:
+        """The glossary is written Spanish = English; from English it is read the other way."""
+        pairs = self.glossary.items() if src == "es" else ((en, es) for es, en in self.glossary.items())
+        terms = ", ".join(f'"{a}" as "{b}"' for a, b in pairs)
+        return GLOSSARY.format(terms=terms) if terms else ""
 
     async def translate(self, text: str, *, src: str = "es", tgt: str = "en", prefix: str = "",
-                        history: list[tuple[str, str]] | None = None, fragment: bool = False,
+                        history: list[tuple[str, str]] | None = None, fragment: bool = False, context: str = "",
                         on_hedge: Callable[[], None] | None = None) -> MtResult:
         """A failed or empty answer is asked again at once, and a slow one races a second call."""
-        system = SYSTEM.format(src=LANG[src], tgt=LANG[tgt]) + (FRAGMENT if fragment else "")
+        system = SYSTEM.format(src=LANG[src], tgt=LANG[tgt]) + (FRAGMENT if fragment else "") + (SPANGLISH if src == "es" else "")
+        system += self._terms(src) + (CONTEXT.format(conversation=context) if context else "")
         messages = [{"role": "system", "content": system}]
         for said, translated in history or []:
             messages.append({"role": "user", "content": said})

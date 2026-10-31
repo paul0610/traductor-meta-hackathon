@@ -31,6 +31,15 @@ ES = [
     "Si tienen alguna pregunta técnica, con gusto la respondo ahora mismo, y si prefieren puedo mostrarles "
     "un ejemplo real de cómo resolvimos un problema parecido el año pasado.",
 ]
+SPANGLISH = [         # English that falls into Spanish where the speaker gets stuck, the case the outgoing chain must clean
+    "Good morning, thanks for having me. I have five years of experience building data systems, "
+    "pero la verdad es que my English is not perfect.",
+    "In my last job I worked with, cómo se dice, los equipos de ventas, and we reduced the reporting time a lot.",
+    "The hardest part was, eh, coordinar a tres equipos que nunca habían trabajado juntos.",
+    "So I learned to, no sé, escuchar primero y después proponer, and that really helped the project.",
+    "I want this position because I like working with clients, sobre todo con clientes de otros países.",
+    "If you have questions about the, the base de datos, I can show you a real example.",
+]
 EN = [
     "Hello, thanks for joining us today.",
     "Could you tell me a little about your background and what you are working on right now?",
@@ -45,7 +54,8 @@ async def speak(text: str, voice: str, rate_pct: int) -> tuple[TtsResult, list[t
     """One line, and when each of its words starts in the trimmed audio."""
     mp3 = bytearray()
     marks = []
-    comm = edge_tts.Communicate(text, voice, rate=f"{rate_pct:+d}%", boundary="WordBoundary")
+    boundary = "SentenceBoundary" if "Multilingual" in voice else "WordBoundary"    # these voices refuse word marks
+    comm = edge_tts.Communicate(text, voice, rate=f"{rate_pct:+d}%", boundary=boundary)
     async for part in comm.stream():
         if part["type"] == "audio":
             mp3 += part["data"]
@@ -60,7 +70,14 @@ async def build(lines: list[str], voice: str, pause_s: float, rate_pct: int = 0)
     pcm = bytearray(gap)
     words = []
     for line in lines:
-        r, marks = await speak(line, voice, rate_pct)
+        for attempt in range(5):                     # Edge refuses connections opened too close together (SPEC §9)
+            try:
+                r, marks = await speak(line, voice, rate_pct)
+                break
+            except edge_tts.exceptions.NoAudioReceived:
+                await asyncio.sleep(2.0)
+        else:
+            raise SystemExit(f"Edge gave no audio for: {line}")
         t0 = len(pcm) / 2 / RATE
         words += [dict(text=w, t=round(t0 + t, 3)) for w, t in marks]
         pcm += r.pcm + gap
@@ -71,10 +88,14 @@ async def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--pause-es", type=float, default=0.8, help="silence between lines of the monologue, seconds")
     ap.add_argument("--pause-en", type=float, default=2.5, help="silence between the other side's turns, seconds")
+    ap.add_argument("--only", default=None, help="build just this fixture")
     args = ap.parse_args()
     for name, lines, voice, pause, rate in (("fixture_es", ES, "es-PE-AlexNeural", args.pause_es, 0),
                                             ("fixture_es_fast", ES, "es-PE-AlexNeural", args.pause_es, 35),
+                                            ("fixture_spanglish", SPANGLISH, "en-US-AndrewMultilingualNeural", args.pause_es, 0),
                                             ("fixture_en", EN, "en-GB-SoniaNeural", args.pause_en, 0)):
+        if args.only not in (None, name):
+            continue
         pcm, words = await build(lines, voice, pause, rate)
         path = Path("logs") / f"{name}.wav"
         save_wav(path, pcm)
