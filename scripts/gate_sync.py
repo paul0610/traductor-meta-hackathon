@@ -37,6 +37,7 @@ from interprete.metrics.truth import clause_truth, turn_onsets
 
 FIXTURE = Path("logs/fixture_es.wav")
 VOICE_S = 60.0
+AFTER_S = 15.0                 # the speaker is looking at the camera, not at "Ya puedes callar"
 CLIP_S = 20.0
 CLIP_SOURCE = "video=OBS Virtual Camera:audio=CABLE Output (VB-Audio Virtual Cable)"
 MATCH_S = 1.0                  # a turn further than this from a clause's start is not that clause's
@@ -72,7 +73,7 @@ def run_voice(delay: float | None) -> Path:
     d = config.load().delay_s if delay is None else delay
     before = set(Path("logs").glob("app_*.jsonl"))
     cmd = [sys.executable, "-m", "interprete.app", "--dub", "--out-only", "--record-cable", "--record-mic", "--no-overlay",
-           "--seconds", str(VOICE_S + d + 3.0)]
+           "--seconds", str(VOICE_S + d + AFTER_S)]
     if delay is not None:
         cmd += ["--delay", str(delay)]
     app = subprocess.Popen(cmd, stderr=subprocess.PIPE, text=True, encoding="utf-8", errors="replace",
@@ -117,7 +118,9 @@ def source_errors(events: list[dict], delay_s: float) -> None:
     """`t_src_start` minus the truth, per source; and the sync the other side really gets."""
     words_path = FIXTURE.with_suffix(".words.json")
     start = state(events, "fixture_start")
-    if start is None or not words_path.exists():
+    if start is None:
+        return
+    if not words_path.exists():
         print("sin verdad de terreno: corre scripts/make_fixtures.py")
         return
     rows = sorted((e for e in events if e["ev"] == "commit" and e.get("phase") == "report"
@@ -180,7 +183,7 @@ def main() -> int:
     s = summarize(events)
     print(json.dumps(s["out"]["dub"], indent=2, ensure_ascii=False))
     print(f"commits {s['out']['commits']}, sonaron {s['out']['played']}, bytes {s['out']['bytes_pct']} %, "
-          f"huecos {s['out']['cable_gaps']}, D estimado {s['out']['d_estimate_s']}")
+          f"huecos {s['out']['cable_gaps']}, D estimado {s['out']['d_estimate_s']}, lag del ASR p50 {s['out']['asr']['lag_s']['p50']}")
     print(f"log: {path}\n")
     fails = gate_s(s)
     print(f"Compuerta S (cifras): {'PASA' if not fails else 'NO PASA'}")
