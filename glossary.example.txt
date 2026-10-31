@@ -1,0 +1,7 @@
+# Copy to glossary.txt, or point RTT_GLOSSARY at your own file. It stays on this PC.
+# One term per line, Spanish = English. It reaches Spark in both directions and the ASR as a hint.
+# A term alone is a name: it stays as it is.
+
+tablero = dashboard
+base de datos = database
+Rimac

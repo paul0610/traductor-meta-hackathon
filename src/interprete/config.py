@@ -35,6 +35,7 @@ class Settings:
     mode: str
     dub: bool
     camera_name: str
+    glossary_path: Path
 
 
 def load() -> Settings:
@@ -55,6 +56,7 @@ def load() -> Settings:
         mode=os.environ.get("RTT_MODE", "incremental"),
         dub=os.environ.get("RTT_DUB", "0") == "1",
         camera_name=os.environ.get("RTT_CAMERA_NAME", "HD UVC"),
+        glossary_path=Path(os.environ.get("RTT_GLOSSARY", ROOT / "glossary.txt")),
     )
 
 
