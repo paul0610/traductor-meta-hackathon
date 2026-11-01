@@ -7,7 +7,6 @@ import numpy as np
 import pytest
 import soundfile as sf
 
-from interprete.config import Settings
 from interprete.tts import own_voice
 from interprete.tts.backup import WithBackup, local_voice, make_voice
 from interprete.tts.edge_session import EdgeVoice
@@ -99,6 +98,11 @@ def recorded(store, v=None, **kw):
 
     asyncio.run(go())
     return e
+
+
+@pytest.fixture(autouse=True)
+def no_wait(monkeypatch):
+    monkeypatch.setattr(own_voice, "CUE_S", 0)
 
 
 @pytest.fixture
@@ -222,6 +226,26 @@ def test_a_clone_that_fails_leaves_the_voice_it_had_and_nothing_on_disk(store):
     assert e.prompt.title == "Hay que grabarla otra vez"
     assert v.voice == "michael" and v.state == "state of michael"
     assert list(store.folder.iterdir()) == []
+
+
+def test_the_recording_starts_and_ends_with_a_sound_and_the_first_stays_out_of_the_clip(store):
+    heard = []
+    started = []
+
+    class Take(FakeTake):
+        def start(self):
+            started.append(list(heard))
+
+    e = enrollment(store, take=Take())
+    e.chime = heard.append
+
+    async def go():
+        await e.record()
+        await e.finish()
+
+    asyncio.run(go())
+    assert started == [["record"]]
+    assert heard == ["record", "done"]
 
 
 def test_a_mic_that_does_not_open_says_so(store):

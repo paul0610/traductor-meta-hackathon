@@ -40,11 +40,11 @@ Honest notes:
 
 ## Run it
 
-Requires Python 3.13 and [uv](https://docs.astral.sh/uv/).
+Requires Windows 11, Python 3.13, [uv](https://docs.astral.sh/uv/), headphones, and [VB-CABLE](https://vb-audio.com/Cable/) (restart Windows after installing it). OBS Studio is only for the synchronized dub. The English voice, about 220 MB, downloads on first use with no account. The microphone is the Windows default unless `RTT_MIC_NAME` says otherwise.
 
 ```powershell
 uv sync --locked
-copy .env.example .env   # then put your MODEL_API_KEY in .env
+copy .env.example .env   # then put your MODEL_API_KEY in .env, from https://dev.meta.ai
 uv run python scripts/test_cable.py          # Edge TTS -> CABLE Input, verified on CABLE Output
 uv run python scripts/asr_live.py            # live mic -> Muse Voice Transcribe, events printed
 ```
@@ -62,6 +62,10 @@ Before a call, `uv run python scripts/warmcheck.py` tests everything a call need
 
 **The metrics line.** `LAG │ SYNC │ CORR │ TURNO │ ES→EN │ META`. What is down shows there and stays: `ASR CAÍDO`, `SUBTÍTULOS CAÍDOS`, `SIN CÁMARA RETRASADA`, `VOZ DE RESPALDO`, `SIN MÉTRICAS`, or the task that died. `META` counts from the click, not from loading. `TU VOZ` means your clone is speaking.
 
+**The subtitle band.** At the bottom of the screen, as tall as what it has to say. What they say in English in grey, and in Spanish in white; below, what you said and how it came out. It fades after 9 s of silence so the call stays in view. If they take the floor while your voice is speaking it says `TE ESTÁN HABLANDO`, and what your voice did not get to say stays on it in amber.
+
+**Sounds.** A short cue when the button changes state, so you do not have to look at it: ready, live, muted and back, raw voice, they took the floor, stopping. They play on your headphones and never reach the cable. `RTT_SOUNDS=0` turns them off.
+
 **Your own voice (optional).** In `LISTO` a card offers to clone your voice. You read half a minute of English, the clone is made on this PC, and you hear your recording next to it before deciding. Say no and the standard voice speaks. The text opens with your consent, so clone only your own voice. The recording and the clone stay in `logs/voice`, which git ignores, and nothing is uploaded. `Borrar mi voz` deletes them. With a clone on, pressing the button plays the notice by itself, and the notice says the voice is a synthetic copy, because the other side would otherwise take it for you.
 
 Making a clone needs Pocket's gated weights: accept the terms at [huggingface.co/kyutai/pocket-tts](https://huggingface.co/kyutai/pocket-tts), sign in with `uvx hf auth login` and reopen the app. Access is approved automatically. Without it the card says so and nothing else changes. Using a clone already made does not need it.
@@ -76,7 +80,7 @@ Dependencies are pinned exactly and locked (`uv.lock`), resolved with a supply-c
 
 **Spanglish.** Say it in English, fall into Spanish when you get stuck, and one English voice comes out. "Cómo se dice" and "no sé" are dropped as fillers. Known limit: on a synthetic voice the ASR kept between 0 and 11 of 13 Spanish words inside English speech, and sometimes skips a passage entirely, so that passage is not interpreted. Terms in the glossary raised it to 10–13 of 13.
 
-**Turns.** If the other side really starts talking (four words and a second of speech, so "yeah" does not count), my voice finishes the clause it is on and gives way. What it did not say stays on the band in grey, to repeat, under a red strip. The floor comes back when they stop.
+**Turns.** If the other side really starts talking (four words and a second of speech, so "yeah" does not count), my voice finishes the clause it is on and gives way. What it did not say stays on the band, to repeat. The floor comes back when they stop.
 
 **Glossary.** Copy `glossary.example.txt` to `glossary.txt`. Terms reach Spark in both directions and the ASR as hints.
 

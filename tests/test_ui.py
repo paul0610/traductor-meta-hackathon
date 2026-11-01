@@ -1,5 +1,6 @@
 import asyncio
 import os
+import time
 from types import SimpleNamespace
 
 import pytest
@@ -13,7 +14,9 @@ from interprete import app  # noqa: E402
 from interprete.app import Outgoing  # noqa: E402
 from interprete.tts.own_voice import OFFER, Prompt  # noqa: E402
 from interprete.ui import widget  # noqa: E402
-from interprete.ui.status import Health, Phase, health, metrics_line, running  # noqa: E402
+from interprete.ui import sounds  # noqa: E402
+from interprete.ui.overlay import Overlay  # noqa: E402
+from interprete.ui.status import Health, Phase, health, metrics_line, running, sound_for  # noqa: E402
 from interprete.ui.widget import Button, MetricsLine, Screen, VoiceCard  # noqa: E402
 
 
@@ -215,6 +218,115 @@ def test_with_a_catalog_voice_the_notice_is_the_usual_one(delay_s):
     out, sent = noticing(False, delay_s)
     Outgoing.send_notice(out)
     assert "copy" not in sent[0].text_tgt and "{own}" not in sent[0].text_tgt
+
+
+@pytest.mark.parametrize("before, after, name", [
+    (Phase.LOADING, Phase.READY, "ready"),
+    (Phase.STARTING, Phase.LIVE, "live"),
+    (Phase.LIVE, Phase.MUTED, "mute"),
+    (Phase.MUTED, Phase.LIVE, "back"),
+    (Phase.LIVE, Phase.RAW, "raw"),
+    (Phase.RAW, Phase.LIVE, "back"),
+    (Phase.LIVE, Phase.PAUSED, "floor"),
+    (Phase.LIVE, Phase.STOPPING, "stop"),
+])
+def test_each_change_has_its_sound(before, after, name):
+    assert sound_for(before, after) == name
+
+
+@pytest.mark.parametrize("before, after", [(Phase.LIVE, Phase.LIVE), (Phase.PAUSED, Phase.LIVE), (Phase.READY, Phase.STARTING),
+                                           (Phase.STOPPING, Phase.OFF)])
+def test_the_rest_is_silent(before, after):
+    assert sound_for(before, after) is None
+
+
+def test_the_screen_plays_a_change_once(qt):
+    played = []
+    screen = Screen(sounds=SimpleNamespace(play=played.append))
+    screen.phase(Phase.READY)
+    screen.phase(Phase.READY)
+    assert played == ["ready"]
+
+
+def test_with_sounds_off_the_screen_is_silent(qt):
+    Screen().phase(Phase.READY)
+
+
+def test_every_cue_is_short_soft_and_does_not_click():
+    for name, notes in sounds.CUES.items():
+        x = sounds.cue(notes)
+        assert len(x) / sounds.RATE < 0.7, name
+        assert abs(float(abs(x).max()) - sounds.PEAK) < 1e-6, name
+        assert abs(x[0]) < 0.01 and abs(x[-1]) < 0.02, name
+
+
+def test_cues_reach_the_player_as_wav():
+    sent = []
+    s = sounds.Sounds(player=sent.append)
+    s.play("live")
+    for _ in range(100):
+        if sent:
+            break
+        time.sleep(0.01)
+    assert sent[0][:4] == b"RIFF"
+
+
+def band(qt):
+    return Overlay()
+
+
+def test_the_band_takes_only_the_room_its_text_needs(qt):
+    o = band(qt)
+    o.mine("Cargando la voz…")
+    small = o.height()
+    o.their_final("Do you have experience with data?")
+    o.their_translation("¿Tienes experiencia con datos? " * 8)
+    assert o.height() > small
+    assert o._rule.isVisibleTo(o)
+
+
+def test_the_band_stays_on_the_same_line_as_it_grows(qt):
+    o = band(qt)
+    o.mine("uno")
+    bottom = o.geometry().bottom()
+    o.their_translation("texto largo " * 20)
+    assert o.geometry().bottom() == bottom
+
+
+def test_with_only_one_side_there_is_no_rule(qt):
+    o = band(qt)
+    o.mine("Hola")
+    assert not o._rule.isVisibleTo(o)
+
+
+def test_my_english_goes_beside_my_spanish_and_nothing_is_read_as_markup(qt):
+    o = band(qt)
+    o.mine("a <b>", "c & d")
+    assert "a &lt;b&gt;" in o._mine.text() and "c &amp; d" in o._mine.text()
+    o.their_translation("<i>tal cual</i>")
+    assert o._tgt.textFormat() == widget.Qt.TextFormat.PlainText
+
+
+def test_their_words_can_be_read_while_they_talk_over_me(qt):
+    o = band(qt)
+    o.collision(True)
+    assert o._alert.isVisibleTo(o)
+    o.collision(False)
+    assert not o._alert.isVisibleTo(o)
+
+
+def test_silence_clears_the_band_but_not_while_they_have_the_floor(qt):
+    o = band(qt)
+    o.their_translation("Hola")
+    o.collision(True)
+    o._go_away()
+    assert o._fade.endValue() == 1.0
+    o.collision(False)
+    o._go_away()
+    o._fade.setCurrentTime(0)
+    o._fade.stop()
+    o._faded()
+    assert o._tgt.text() == "" and not o._tgt.isVisibleTo(o)
 
 
 def test_right_click_works_while_loading(qt):

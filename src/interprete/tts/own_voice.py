@@ -40,6 +40,7 @@ FRAME_S = 0.02
 TYPICAL_CHARS = 40             # a clause of this length says the pace in one number
 TYPICAL_S = 1.9                # what michael takes: the sync was tuned on it
 MAX_SPEED = 1.3                # past this the clip stops sounding like a person reading
+CUE_S = 0.4                    # the sound that says it is recording
 PREVIEW_REAL_S = 6
 PREVIEW_GAP_S = 0.6
 TO_READ = ("This is my own voice, and I agree to make a copy of it for my personal interpreter. "
@@ -211,6 +212,7 @@ class Enrollment:
         self.emit = emit or (lambda ev, **f: None)
         self.on_voice = on_voice
         self.on_prompt: Callable[[Prompt | None], None] = lambda p: None
+        self.chime: Callable[[str], None] = lambda name: None
         self.prompt: Prompt | None = None
         self._take: Take | None = None
         self._ticker: asyncio.Task | None = None
@@ -243,6 +245,8 @@ class Enrollment:
     async def record(self) -> None:
         take = self.make_take(self.mic_name)
         self.show(recording(0))
+        self.chime("record")
+        await asyncio.sleep(CUE_S)                   # the cue must not end up in the clip
         try:
             await asyncio.to_thread(take.start)
         except RuntimeError as exc:
@@ -264,6 +268,7 @@ class Enrollment:
             self._ticker.cancel()
         take, self._take = self._take, None
         x, rate = take.stop()
+        self.chime("done")
         self.show(WORKING)
         clean, problems = review(x, rate)
         if clean is None:

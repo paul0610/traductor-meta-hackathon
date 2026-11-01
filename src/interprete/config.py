@@ -36,6 +36,7 @@ class Settings:
     dub: bool
     camera_name: str
     glossary_path: Path
+    sounds: bool
 
 
 def load() -> Settings:
@@ -57,6 +58,7 @@ def load() -> Settings:
         dub=os.environ.get("RTT_DUB", "0") == "1",
         camera_name=os.environ.get("RTT_CAMERA_NAME", "HD UVC"),
         glossary_path=Path(os.environ.get("RTT_GLOSSARY", ROOT / "glossary.txt")),
+        sounds=os.environ.get("RTT_SOUNDS", "1") == "1",
     )
 
 

@@ -18,7 +18,8 @@ from PySide6.QtGui import QColor, QFont, QGuiApplication, QPainter, QPen
 from PySide6.QtWidgets import QApplication, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
 
 from .overlay import Overlay
-from .status import Health, Phase
+from .sounds import Sounds
+from .status import Health, Phase, sound_for
 
 if TYPE_CHECKING:
     from ..tts.own_voice import Enrollment, Prompt
@@ -233,11 +234,12 @@ class VoiceCard(_Floating):
 class Screen:
     """The windows as one thing for the chains; subtitle calls go straight to the band."""
 
-    def __init__(self, *, hide_from_capture: bool = False) -> None:
+    def __init__(self, *, hide_from_capture: bool = False, sounds: Sounds | None = None) -> None:
         self.overlay = Overlay(hide_from_capture=hide_from_capture)
         self.button = Button(hide_from_capture=hide_from_capture)
         self.metrics = MetricsLine(hide_from_capture=hide_from_capture)
         self.card = VoiceCard(hide_from_capture=hide_from_capture)
+        self.sounds = sounds
         self.enrollment: Enrollment | None = None
 
     def __getattr__(self, name: str):
@@ -252,7 +254,14 @@ class Screen:
         self.metrics.set_text(text)
 
     def phase(self, phase: Phase) -> None:
+        name = sound_for(self.button.phase, phase)
+        if name is not None:
+            self.chime(name)
         self.button.set_phase(phase)
+
+    def chime(self, name: str) -> None:
+        if self.sounds is not None:
+            self.sounds.play(name)
 
     def vitals(self, lag_s: float | None, level: Health) -> None:
         self.button.set_vitals(lag_s, level)
@@ -263,6 +272,7 @@ class Screen:
     def offer(self, enrollment: Enrollment) -> None:
         self.enrollment = enrollment
         enrollment.on_prompt = self.card.show_prompt
+        enrollment.chime = self.chime
         self.card.on_action = lambda key: asyncio.ensure_future(enrollment.act(key))
         enrollment.opening()
 

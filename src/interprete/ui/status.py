@@ -25,6 +25,17 @@ class Phase(str, Enum):
     OFF = "APAGADO"
 
 
+SOUNDS = {Phase.READY: "ready", Phase.LIVE: "live", Phase.PAUSED: "floor", Phase.MUTED: "mute", Phase.RAW: "raw",
+          Phase.STOPPING: "stop"}
+
+
+def sound_for(before: Phase, after: Phase) -> str | None:
+    """Only a change makes a sound, and getting the floor back is not news."""
+    if before is after or (before is Phase.PAUSED and after is Phase.LIVE):
+        return None
+    return "back" if before in (Phase.MUTED, Phase.RAW) and after is Phase.LIVE else SOUNDS.get(after)
+
+
 class Health(str, Enum):
     NONE = "none"
     OK = "ok"

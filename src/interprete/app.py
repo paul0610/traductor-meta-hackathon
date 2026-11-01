@@ -867,10 +867,12 @@ def main() -> None:
     from PySide6.QtWidgets import QApplication
     from qasync import QEventLoop
 
+    from .ui.sounds import Sounds
     from .ui.widget import Screen
 
     qt = QApplication([sys.argv[0]])
-    screen = Screen(hide_from_capture=config.load().overlay_hide_from_capture)
+    settings = config.load()
+    screen = Screen(hide_from_capture=settings.overlay_hide_from_capture, sounds=Sounds() if settings.sounds else None)
     screen.show()
     timer = QTimer()                                # lets Python run signal handlers while Qt sleeps
     timer.timeout.connect(lambda: None)
