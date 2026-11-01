@@ -3,24 +3,33 @@
 Left click starts from LISTO and stops from then on; right click stops from any state,
 loading included. Stopping restores the microphone. The ring is the health of the lag, the
 number the lag in seconds. Nothing here is a setting: what the app needs from you shows on
-the metrics line. Both windows stay where they were dragged, from one run to the next.
+the metrics line. The windows stay where they were dragged, from one run to the next. In
+LISTO, and only there, a card offers the optional step of cloning your voice.
 """
 
 from __future__ import annotations
 
 import asyncio
 import ctypes
-from typing import Callable
+from typing import TYPE_CHECKING, Callable
 
 from PySide6.QtCore import QPoint, QRectF, QSettings, Qt, QTimer
 from PySide6.QtGui import QColor, QFont, QGuiApplication, QPainter, QPen
-from PySide6.QtWidgets import QApplication, QHBoxLayout, QLabel, QWidget
+from PySide6.QtWidgets import QApplication, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
 
 from .overlay import Overlay
 from .status import Health, Phase
 
+if TYPE_CHECKING:
+    from ..tts.own_voice import Enrollment, Prompt
+
 WDA_EXCLUDEFROMCAPTURE = 0x11
 SIZE = 112
+CARD_W = 372
+BUTTON_CSS = ("QPushButton {{ color: {text}; background: {back}; border: none; border-radius: 6px; padding: 7px 12px; }}"
+              "QPushButton:hover {{ background: {hover}; }}")
+SUGGESTED = BUTTON_CSS.format(text="#0c0e12", back="#8fd3ff", hover="#b5e3ff")
+OTHER = BUTTON_CSS.format(text="#d6d9de", back="#2a2e35", hover="#3a3f48")
 RING_PX = 8
 DRAG_PX = 4                    # moved less than this, it was a click
 PLACES = "logs/widget.ini"
@@ -161,13 +170,75 @@ class MetricsLine(_Floating):
         p.drawRoundedRect(QRectF(self.rect()), 8, 8)
 
 
+class VoiceCard(_Floating):
+    def __init__(self, *, hide_from_capture: bool = False) -> None:
+        super().__init__(hide_from_capture)
+        self.setWindowTitle("Interprete: voz")
+        self.setFixedWidth(CARD_W)
+        self.on_action: Callable[[str], None] = lambda key: None
+        self._actions: tuple[tuple[str, str], ...] = ()
+        self._title = QLabel("")
+        self._title.setFont(QFont("Segoe UI", 11, QFont.Weight.DemiBold))
+        self._title.setStyleSheet("color: #ffffff;")
+        self._body = QLabel("")
+        self._body.setFont(QFont("Segoe UI", 10))
+        self._body.setStyleSheet("color: #d6d9de;")
+        self._body.setWordWrap(True)
+        self._row = QHBoxLayout()
+        self._row.setSpacing(8)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(14, 12, 14, 12)
+        layout.setSpacing(8)
+        layout.addWidget(self._title)
+        layout.addWidget(self._body)
+        layout.addLayout(self._row)
+        screen = QApplication.primaryScreen()
+        if screen is not None:
+            g = screen.availableGeometry()
+            self.place(QPoint(g.x() + g.width() - CARD_W - 24, g.y() + 24 + SIZE + 12))
+
+    def show_prompt(self, prompt: Prompt | None) -> None:
+        if prompt is None:
+            self.hide()
+            return
+        self._title.setText(prompt.title)
+        self._body.setText(prompt.body)
+        if prompt.actions != self._actions:          # the timer redraws the card: a click must not land on a new button
+            self._actions = prompt.actions
+            self._buttons(prompt.suggests)
+        self.adjustSize()
+        self.show()
+
+    def _buttons(self, suggests: bool) -> None:
+        while self._row.count():
+            item = self._row.takeAt(0).widget()
+            item.setParent(None)
+            item.deleteLater()
+        for i, (label, key) in enumerate(self._actions):
+            button = QPushButton(label)
+            button.setFont(QFont("Segoe UI", 10))
+            button.setStyleSheet(SUGGESTED if suggests and i == 0 else OTHER)
+            button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+            button.clicked.connect(lambda _=False, key=key: self.on_action(key))
+            self._row.addWidget(button)
+
+    def paintEvent(self, event) -> None:
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QColor(12, 14, 18, 240))
+        p.drawRoundedRect(QRectF(self.rect()), 10, 10)
+
+
 class Screen:
-    """The three windows as one thing for the chains; subtitle calls go straight to the band."""
+    """The windows as one thing for the chains; subtitle calls go straight to the band."""
 
     def __init__(self, *, hide_from_capture: bool = False) -> None:
         self.overlay = Overlay(hide_from_capture=hide_from_capture)
         self.button = Button(hide_from_capture=hide_from_capture)
         self.metrics = MetricsLine(hide_from_capture=hide_from_capture)
+        self.card = VoiceCard(hide_from_capture=hide_from_capture)
+        self.enrollment: Enrollment | None = None
 
     def __getattr__(self, name: str):
         return getattr(self.overlay, name)
@@ -189,11 +260,23 @@ class Screen:
     def on_stop(self, fn: Callable[[], None]) -> None:
         self.button.on_stop = fn
 
+    def offer(self, enrollment: Enrollment) -> None:
+        self.enrollment = enrollment
+        enrollment.on_prompt = self.card.show_prompt
+        self.card.on_action = lambda key: asyncio.ensure_future(enrollment.act(key))
+        enrollment.opening()
+
     async def go(self, stop: asyncio.Event) -> None:
-        """Nothing is captured until the button is pressed."""
+        """Nothing is captured until the button is pressed, and it waits for a voice being recorded or decided."""
         start = asyncio.Event()
-        self.button.on_start = start.set
+
+        def press() -> None:
+            if self.enrollment is None or not self.enrollment.busy:
+                start.set()
+
+        self.button.on_start = press
         waiting = [asyncio.ensure_future(start.wait()), asyncio.ensure_future(stop.wait())]
         await asyncio.wait(waiting, return_when=asyncio.FIRST_COMPLETED)
         for w in waiting:
             w.cancel()
+        self.card.hide()

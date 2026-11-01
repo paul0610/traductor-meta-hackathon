@@ -9,10 +9,12 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PySide6.QtCore import QPoint  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
+from interprete import app  # noqa: E402
 from interprete.app import Outgoing  # noqa: E402
+from interprete.tts.own_voice import OFFER, Prompt  # noqa: E402
 from interprete.ui import widget  # noqa: E402
 from interprete.ui.status import Health, Phase, health, metrics_line, running  # noqa: E402
-from interprete.ui.widget import Button, MetricsLine, Screen  # noqa: E402
+from interprete.ui.widget import Button, MetricsLine, Screen, VoiceCard  # noqa: E402
 
 
 @pytest.fixture(scope="module")
@@ -115,6 +117,106 @@ def test_stopping_from_ready_releases_go(qt):
     asyncio.run(go())
 
 
+class Steps:
+    """Stands in for the enrollment: the card only needs to be told what to show and where clicks go."""
+
+    def __init__(self, prompt=OFFER):
+        self.prompt = prompt
+        self.on_prompt = lambda p: None
+        self.acted = []
+
+    @property
+    def busy(self):
+        return self.prompt is not None and self.prompt.busy
+
+    def opening(self):
+        self.on_prompt(self.prompt)
+
+    async def act(self, key):
+        self.acted.append(key)
+
+
+def test_the_offer_shows_in_ready_and_goes_when_the_call_starts(qt):
+    screen = Screen()
+
+    async def go():
+        stop = asyncio.Event()
+        screen.offer(Steps())
+        assert screen.card.isVisible()
+        task = asyncio.create_task(screen.go(stop))
+        await asyncio.sleep(0)
+        screen.button.set_phase(Phase.READY)
+        screen.button.clicked(True)
+        await asyncio.wait_for(task, 1.0)
+        assert not screen.card.isVisible()
+
+    asyncio.run(go())
+
+
+def test_the_button_waits_for_a_voice_being_recorded(qt):
+    screen = Screen()
+    steps = Steps(Prompt("Grabando", "", busy=True))
+
+    async def go():
+        stop = asyncio.Event()
+        screen.offer(steps)
+        task = asyncio.create_task(screen.go(stop))
+        await asyncio.sleep(0)
+        screen.button.set_phase(Phase.READY)
+        screen.button.clicked(True)
+        await asyncio.sleep(0.01)
+        assert not task.done()
+        steps.prompt = None
+        screen.button.clicked(True)
+        await asyncio.wait_for(task, 1.0)
+
+    asyncio.run(go())
+
+
+def test_a_card_button_reaches_the_step_it_names(qt):
+    screen = Screen()
+    steps = Steps()
+
+    async def go():
+        screen.offer(steps)
+        buttons = screen.card.findChildren(widget.QPushButton)
+        assert [b.text() for b in buttons] == [label for label, _ in OFFER.actions]
+        buttons[0].click()
+        await asyncio.sleep(0)
+        await asyncio.sleep(0)
+
+    asyncio.run(go())
+    assert steps.acted == ["script"]
+
+
+def test_the_timer_keeps_the_buttons_it_already_drew(qt):
+    card = VoiceCard()
+    card.show_prompt(Prompt("Grabando · 1 s", "", (("Terminar", "finish"),), busy=True))
+    first = card.findChildren(widget.QPushButton)[0]
+    card.show_prompt(Prompt("Grabando · 2 s", "", (("Terminar", "finish"),), busy=True))
+    assert card.findChildren(widget.QPushButton)[0] is first
+
+
+def noticing(cloned, delay_s):
+    sent = []
+    return SimpleNamespace(policy=SimpleNamespace(take_seq=lambda: 7), mixer=SimpleNamespace(latched=False), delay_s=delay_s,
+                           cloned=cloned, submit_commit=sent.append, emit=lambda *a, **k: None), sent
+
+
+@pytest.mark.parametrize("delay_s", [0.0, 7.0])
+def test_the_notice_says_when_the_voice_is_a_copy(delay_s):
+    out, sent = noticing(True, delay_s)
+    Outgoing.send_notice(out)
+    assert app.NOTICE_OWN_EN in sent[0].text_tgt
+
+
+@pytest.mark.parametrize("delay_s", [0.0, 7.0])
+def test_with_a_catalog_voice_the_notice_is_the_usual_one(delay_s):
+    out, sent = noticing(False, delay_s)
+    Outgoing.send_notice(out)
+    assert "copy" not in sent[0].text_tgt and "{own}" not in sent[0].text_tgt
+
+
 def test_right_click_works_while_loading(qt):
     screen = Screen()
     calls = []
@@ -186,7 +288,7 @@ def test_what_is_down_shows_on_the_line():
         assert word in line
 
 
-@pytest.mark.parametrize("make", [Button, MetricsLine])
+@pytest.mark.parametrize("make", [Button, MetricsLine, VoiceCard])
 def test_a_window_stays_where_it_was_dragged(qt, tmp_path, monkeypatch, make):
     monkeypatch.setattr(widget, "PLACES", str(tmp_path / "widget.ini"))
     moved = make()

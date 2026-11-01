@@ -11,7 +11,7 @@ from interprete.config import Settings
 from interprete.tts import own_voice
 from interprete.tts.backup import WithBackup, local_voice, make_voice
 from interprete.tts.edge_session import EdgeVoice
-from interprete.tts.own_voice import (MAX_S, MAX_SPEED, MIN_S, NO_ACCESS, OFFER, OWN, PACE_TEXTS, READ, STANDARD, TERMS_URL,
+from interprete.tts.own_voice import (FORGET, MAX_S, MAX_SPEED, MIN_S, NO_ACCESS, OFFER, OWN, PACE_TEXTS, READ, STANDARD, TERMS_URL,
                                       TYPICAL_CHARS, TYPICAL_S, Enrollment, Store, clip_speed, fit_pace, review)
 from interprete.tts.pocket import PACE, PocketVoice
 
@@ -279,6 +279,16 @@ def test_a_kept_voice_opens_as_own_and_can_step_aside(store):
     asyncio.run(next_run.own())
     assert next_run.voice.own and next_run.prompt is OWN
     assert store.read("english").active
+
+
+def test_forgetting_asks_first_and_can_be_called_off(store):
+    e = recorded(store)
+    asyncio.run(e.keep())
+    asyncio.run(e.act("ask_forget"))
+    assert e.prompt is FORGET
+    assert store.read("english") is not None
+    asyncio.run(e.act("back"))
+    assert e.prompt is OWN
 
 
 def test_forgetting_a_kept_voice_deletes_every_file(store):

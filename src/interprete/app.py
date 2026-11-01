@@ -51,8 +51,9 @@ from .policy.consecutivo import Consecutive
 from .policy.incremental import Incremental
 from .policy.scheduler import MT_TIMEOUT_S, TTS_TIMEOUT_S, Scheduler
 from .safety import ExitGuard, Watchdog
-from .tts.backup import make_voice
+from .tts.backup import local_voice, make_voice
 from .tts.edge import FAST_RATE_PCT
+from .tts.own_voice import Enrollment, Store
 from .turns.floor import Floor
 from .ui.status import Phase, health, metrics_line, running
 from .video.virtual_cam import VirtualCam
@@ -68,11 +69,12 @@ SYNC_LATE_STREAK = 3
 WORKERS = 2                     # concurrent Spark calls and syntheses, outgoing
 OFF_HOLD_S = 2.0                # the windows close with the process: APAGADO has to be seen first
 POLICIES = {"consecutive": Consecutive, "incremental": Incremental}
-NOTICE_EN = ("Hi, a quick note before we start: I speak Spanish and you are hearing an AI interpreter. "
+NOTICE_EN = ("Hi, a quick note before we start: I speak Spanish and you are hearing an AI interpreter{own}. "
              "It runs a few seconds behind me, so please give me a moment after you finish speaking.")
-NOTICE_DUB_EN = ("Hi, a quick note before we start: I speak Spanish and you are hearing an AI interpreter. My video "
+NOTICE_DUB_EN = ("Hi, a quick note before we start: I speak Spanish and you are hearing an AI interpreter{own}. My video "
                  "reaches you about {n} seconds late so it stays in sync with the voice, so please give me a moment "
                  "after you finish speaking.")
+NOTICE_OWN_EN = " speaking with a synthetic copy of my voice"
 SIM_LINES = [
     ("Buenos días, gracias por recibirme.", "Good morning, thanks for having me."),
     ("Tengo cinco años de experiencia en datos.", "I have five years of experience in data."),
@@ -412,6 +414,18 @@ class Outgoing:
     def connected(self) -> bool:
         return not self.opening and (self.asr is None or self.asr.clock.session_id is not None)
 
+    @property
+    def cloned(self) -> bool:
+        local = local_voice(self.voice)
+        return local is not None and local.own
+
+    def enrollment(self) -> Enrollment | None:
+        local = local_voice(self.voice)
+        if local is None:
+            return None
+        return Enrollment(local, Store(), self.settings.pocket_voice, self.settings.mic_name, emit=self.emit,
+                          on_voice=lambda: self.ui.bar(self.ready_line()))
+
     async def controller(self) -> None:
         """TTS → rest once idle, watchdog, overlay line: all need the scheduler, so none lives in the callback."""
         t_bar = 0.0
@@ -435,7 +449,8 @@ class Outgoing:
             return
         t = now()
         seq = self.policy.take_seq()
-        text = NOTICE_DUB_EN.format(n=round(self.delay_s)) if self.delay_s > 0 else NOTICE_EN
+        own = NOTICE_OWN_EN if self.cloned else ""
+        text = NOTICE_DUB_EN.format(n=round(self.delay_s), own=own) if self.delay_s > 0 else NOTICE_EN.format(own=own)
         self.submit_commit(Commit(utterance_id=f"out:notice:{seq}", commit_id=0, seq=seq, channel=Channel.OUT,
                                   text_src="(aviso inicial)", prefix_src="", boundary="notice",
                                   t_src_start=t - self.delay_s, t_src_end=None, t_src_source="notice", t_commit=t,
@@ -731,7 +746,12 @@ class App:
             self.ui.phase(Phase.READY)
             self.ui.bar(self.out.ready_line() if self.out is not None else "LISTO")
             self.ui.mine("Listo. Nada sale de esta PC hasta que pulses el botón.")
+            enrollment = self.out.enrollment() if self.out is not None else None
+            if enrollment is not None:
+                self.ui.offer(enrollment)
             await self.ui.go(self.stop)
+            if enrollment is not None:
+                enrollment.close()
         if self.stop.is_set():
             self.ui.phase(Phase.STOPPING)
             self.ui.bar("Apagado")
@@ -754,8 +774,10 @@ class App:
         for c in self.chains:
             for name, coro in c.tasks().items():
                 self._task(name, coro)
-        if self.args.notice and self.out is not None:
-            self.out.send_notice()
+        if self.out is not None and (self.args.notice or (self.out.cloned and not self.args.no_overlay)):
+            self.out.send_notice()                   # a clone sounds like me: the other side is told before it hears it
+            if self.out.cloned:
+                self.ui.mine("Suena el aviso de que es una copia de tu voz. Habla cuando termine.")
         if self.args.simulate:
             self._task("out.simulate", self.out.simulate(self.on_f9))
         if self.args.wav_out or self.args.wav_in:

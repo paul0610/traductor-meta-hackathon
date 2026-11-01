@@ -154,8 +154,9 @@ class Take:
 class Prompt:
     title: str
     body: str
-    actions: tuple[tuple[str, str], ...] = ()        # (label, method of Enrollment); the first is the one suggested
+    actions: tuple[tuple[str, str], ...] = ()        # (label, method of Enrollment)
     busy: bool = False                               # the round button waits
+    suggests: bool = True                            # the first action is the one to take
 
 
 OFFER = Prompt("¿Quieres que te oigan con tu voz?",
@@ -170,9 +171,11 @@ READ = Prompt("Lee esto en inglés, con calma",
               (("Empezar a grabar", "record"), ("Cancelar", "later")))
 WORKING = Prompt("Clonando tu voz…", "Tarda unos 30 s. Nada sale de esta PC.", busy=True)
 OWN = Prompt("Hablas con tu voz clonada", "Al empezar, el otro lado oirá un aviso de que es una copia.",
-             (("Voz estándar", "standard"), ("Borrar mi voz", "forget")))
+             (("Voz estándar", "standard"), ("Borrar mi voz", "ask_forget")), suggests=False)
 STANDARD = Prompt("Tu voz clonada está guardada", "Ahora suena la voz estándar.",
-                  (("Usar mi voz", "own"), ("Borrar mi voz", "forget")))
+                  (("Usar mi voz", "own"), ("Borrar mi voz", "ask_forget")))
+FORGET = Prompt("¿Borrar tu voz?", "Se borran la grabación y el clon de esta PC. Para volver a usarla habrá que grabarla otra vez.",
+                (("Borrar", "forget"), ("Cancelar", "back")), suggests=False)
 
 
 def recording(seconds: float) -> Prompt:
@@ -318,6 +321,12 @@ class Enrollment:
 
     async def discard(self) -> None:
         await self.forget()
+
+    async def ask_forget(self) -> None:
+        self.show(FORGET)
+
+    async def back(self) -> None:
+        self.opening()
 
     async def forget(self) -> None:
         await self.voice.switch(self.standard_voice)
