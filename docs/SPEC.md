@@ -257,3 +257,9 @@ Mechanism taken from how zero-shot voice cloning works, not from any other proje
 - **The notice is not optional with a clone.** Pocket's terms bar passing generated audio as a real recording, and a clone sounds like the person. Pressing the button plays the notice by itself and it says the voice is a synthetic copy. Runs with `--no-overlay` skip it: those are gates, and no one is listening.
 - **Consent is in the recording.** The text opens with it, and `Store` keeps the text and the date. Sample, state and pace live in `logs/voice`, which git ignores; a take not approved does not stay on disk.
 - **Edge stays as the backup:** a clause Pocket fails or holds 3 s comes out in Edge's voice, not the clone's.
+
+## 11. The band and the sounds
+
+- **The band is as tall as its text** and grows upwards from one spot; after 9 s with nothing new it fades, and it clears only when the fade ends. It stays while they hold the floor, so what they said and what my voice left unsaid can still be read.
+- **Sounds are tones made in `ui/sounds.py`,** with no files and no new dependency: QtMultimedia is not in the install, so they go through `winsound` from memory, which blocks, on a thread of their own. They play on the Windows default output and never on the cable. `sound_for` decides them from the change of phase, so the bar's redraw every 0.5 s stays silent. The loopback takes them to the incoming ASR too; they are short, soft and without speech, and that has not been measured.
+- **The recording cue plays before the microphone opens,** with 0.4 s to end, so it stays out of the clip.
