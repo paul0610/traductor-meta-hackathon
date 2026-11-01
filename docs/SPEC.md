@@ -15,7 +15,7 @@ Two independent chains, one per direction. Neither touches the video-call app: i
 - Audio for the ASR is mono PCM16 at 16 kHz (24 kHz is the engine-native rate and also accepted). The incoming chain never changes audio devices.
 
 ```
-OUT: mic ─► capture ─► ASR(es) ─► policy ─► Spark(es→en) ─► Pocket TTS ─► scheduler ─► mixer ─► CABLE Input ─► (call app mic = CABLE Output)
+OUT: mic ─► capture ─► ASR(es) ─► policy ─► Spark(es→en) ─► MMS-TTS ─► scheduler ─► mixer ─► CABLE Input ─► (call app mic = CABLE Output)
 IN:  loopback ─► capture ─► ASR(en) ─► policy ─► Spark(en→es) ─► overlay
 ```
 
@@ -104,7 +104,7 @@ flowchart LR
     CAPo --> ASRo["asr.meta_realtime<br/>WS, es + Spanglish"]
     ASRo --> POLo["policy (LA-2)<br/>AsrEvent → Commit"]
     POLo --> MTo["mt.spark<br/>es→en, structured JSON"]
-    MTo --> TTSo["tts.edge<br/>Commit → PcmChunk"]
+    MTo --> TTSo["tts.mms<br/>Commit → PcmChunk"]
     TTSo --> SCH["policy.scheduler<br/>ordered by seq, not before t_src_start + D"]
     SCH --> MIX["audio.cable_mixer<br/>states · CABLE Input"]
     CAPo -. "original voice delayed D, −20 dB (piece 10)" .-> MIX
@@ -162,7 +162,7 @@ One `asyncio.TaskGroup` per channel plus a shared one. `sounddevice` callbacks a
 | `asr_recv[c]` | WS (text) | `q_events[c]`, `q_metrics` | normalize to `AsrEvent`; keep the clock mapping | ASR `error` is logged and treated as a cut |
 | `policy[c]` | `q_events[c]` | `q_commits[c]` | consecutive: one `Commit` per `speechComplete`; incremental: LA-2 over cumulative partials; derive `t_src_start` (§7.4); at most one speculation task in flight | committed text untouched; late correction → `corrections_blocked += 1` |
 | `mt[c]` (two at a time on `out`) | `q_commits[c]` | `q_translated[c]`, `q_metrics` | Spark with `prefix_src`, the last N commits of both channels and the glossary; structured output; minimum reasoning | 4 s timeout → **tombstone** to the scheduler, counted; overlay shows source text in grey; never waits unbounded |
-| `tts[out]` | `q_translated[out]` | `scheduler.submit()` | Pocket TTS, with Edge taking a clause it fails or holds 3 s (§10) → PCM at cable rate → trim silences → `rate` from characters and `t_src_end − t_src_start` (isochrony) → `PcmChunk`; runs ahead of playback, so pre-synthesis comes for free | keeps trying for 6 s, then tombstone, counted |
+| `tts[out]` | `q_translated[out]` | `scheduler.submit()` | MMS-TTS (§12) → PCM at cable rate → trim silences → `rate` from characters and `t_src_end − t_src_start` (isochrony) → `PcmChunk`; runs ahead of playback, so pre-synthesis comes for free | keeps trying for 6 s, then tombstone, counted |
 | `overlay[in]` | `q_translated[in]` | UI | EN/ES subtitles; backchannels as text only | — |
 | `scheduler` (one per output; only `out` this week) | heap by `seq` + tombstones | mixer ring, `q_metrics` | see §7.5.1 | F9 empties heap and ring |
 | `mixer` (output callback, `CABLE Input`) | TTS ring, delayed-voice ring, live mic ring | cable | sums by state (§7.6) | underrun → zeros, `cable_gaps += 1`; never blocks |
@@ -226,7 +226,7 @@ The delay line (`audio/delay.py`) is written by the mic callback and read by the
 - **Spark repairs what the ASR spells wrong** if told how: `SPANGLISH` in `mt/spark.py` lists the patterns seen (`K` for `que`, `no say` for `no sé`, `paces` for `países`) and treats word searching as filler. Over the same clauses no Spanish word was left. A clause that was only a filler comes back empty twice and counts as `filler`, not as lost.
 - **Conversation cost.** Spark with 0, 2 000, 8 000, 32 000, 128 000 and 512 000 characters of conversation, p50 of 8 calls: 0.95, 1.01, 1.05, 1.10, 2.06 and 3.64 s, with one call at 16.9 s at 128 000. `mt/context.py` stops at 32 000 characters, about 40 minutes of talk. It changes real clauses: with a question about message queues, "la cola se llena" goes from "the line fills up" to "the queue fills up".
 
-## 9. Edge TTS facts this design relies on *[measured 2026-10-30 on this PC; Edge publishes none of this]*
+## 9. Edge TTS facts, outside the hackathon build *[measured 2026-10-30 on this PC; Edge publishes none of this]*
 
 - **Edge rate-limits new connections, not requests.** `edge_tts` opens one per request: at one every 0.75 s, 52 of 80 failed with `NoAudioReceived` after ~3.2 s, whatever the text; at one every 1.5 s, 1 of 60. A second identical request and one differing by +1 % rate failed alike, so racing a new connection does not rescue a throttled one.
 - **One open WebSocket carries many turns.** Same protocol, kept open: 80 of 80 at the same pace, 60 of 60 at one every 0.4 s, first audio p50 0.25–0.27 s against 1.0 s, whole clause 0.36–0.42 s against 1.3 s. The handshake (0.8–1.1 s) was the cost. `tts/edge_session.py` keeps three open: one per worker and a spare.
@@ -235,7 +235,7 @@ The delay line (`audio/delay.py`) is written by the mic callback and read by the
 - **Intermediate `rate` values are worse than 0 and +25 %.** Rate drawn at random per turn in the same window, three experiments: 1 of 262 turns failed at 0 or +25 %, 5 of 179 at anything else, with first audio at p50 0.35 s against 0.23 s in the worst window. Nothing explains it and the sample of failures is small, but the fix costs little: the isochrony uses only those two steps, which leaves the voice within ±12.5 % of the clause, inside the ±15 % goal.
 - **Clause length is predicted from characters, not words.** 242 clauses at rate 0: 0.047 s per character plus 0.40 s, residual ±0.13 s, against ±0.29 s for words at 3 per second. "For mid-sized companies" is three words and 1.56 s. An overflow is what makes a clean run miss its deadlines: audio was ready 2 s early and still had to wait for the previous clause to end.
 
-## 10. Pocket TTS facts this design relies on *[measured 2026-10-30 and 31 on this PC, Ryzen 9 6900HX]*
+## 10. Pocket TTS facts, outside the hackathon build *[measured 2026-10-30 and 31 on this PC, Ryzen 9 6900HX]*
 
 - **The voice is `michael` on the default `english` model,** picked by ear, +3 dB (`RTT_POCKET_GAIN_DB`; a clause that would clip rises less). `george` on `english_18m_2026-10` is half the work and allows D = 5.5, and is one setting away.
 - **Time per clause:** p50 1.05 s, p95 1.40, max 1.71 over 219 clauses with 2 threads, using about 4 cores while it speaks. That is 1.2 times real time on these short clauses, not the 6 published. More threads cost twice the cores for 10 % less time, and int8 quantization was slower.
@@ -263,3 +263,15 @@ Mechanism taken from how zero-shot voice cloning works, not from any other proje
 - **The band is as tall as its text** and grows upwards from one spot; after 9 s with nothing new it fades, and it clears only when the fade ends. It stays while they hold the floor, so what they said and what my voice left unsaid can still be read.
 - **Sounds are tones made in `ui/sounds.py`,** with no files and no new dependency: QtMultimedia is not in the install, so they go through `winsound` from memory, which blocks, on a thread of their own. They play on the Windows default output and never on the cable. `sound_for` decides them from the change of phase, so the bar's redraw every 0.5 s stays silent. The loopback takes them to the incoming ASR too; they are short, soft and without speech, and that has not been measured.
 - **The recording cue plays before the microphone opens,** with 0.4 s to end, so it stays out of the clip.
+
+## 12. MMS-TTS facts this design relies on *[measured 2026-11-01 on this PC, 58 to 164 clauses]*
+
+Every model called at runtime has to be Meta's, so the voice is `facebook/mms-tts-eng`, on open weights, CC BY-NC 4.0. `RTT_TTS_ENGINE=mms` is the default and has nothing behind it. Pocket and Edge (§9, §10) stay in the code behind that switch, out of `uv sync`, and a default run does not load them: `tests/test_mms.py` runs the check in a clean process.
+
+- **No streaming:** VITS hands the clause over whole, so its first PCM is its last. Whole clause ready: p50 0.60 s, p95 0.83 s, worst 1.09 s. Pocket with `michael` measured the same way, on 2 threads, took p50 1.23 s and p95 2.03 s. The first run downloads about 150 MB; later it loads in 1.4 s.
+- **Threads:** at speaking rate 1.0, p50 and p95 per clause are 1.13 and 1.56 s on 2, 0.72 and 1.01 s on 4, 0.65 and 0.88 s on 6, 0.64 and 0.90 s on 8. It runs on 4 and leaves the rest to the call.
+- **It speaks slowly, and `speaking_rate` is blunt:** durations are rounded up frame by frame, so a higher rate shortens speech by less than it says. Forty characters, trimmed, with no duration noise: 2.43 s at 1.0, 2.29 s at 1.15, 2.10 s at 1.3, 1.95 s at 1.45. `michael` took 1.88 s. Duration noise at its default, 0.8, adds 6 % and predicts the length no better, so it is 0.
+- **The rate was set by gate S, on the same fixtures:** 1.3 failed twice, at 0.635 and 0.527 s; 1.45 passed four times, at 0.23 to 0.38 s, against 1 of 2 for Pocket. The failure at 1.3 was the same one as Pocket's: English longer than its Spanish delays what comes after it. Whether 1.45 is pleasant is for the ear to say.
+- **The tokenizer loses what it does not know, in silence:** of the digits it keeps 0 to 6 and drops 7 to 9, and it drops punctuation, symbols and accents. "Núñez" would come out "nez". Spark is asked to write numbers in words, only towards English; `tts/spoken.py` expands the rest. Commas make no pause.
+- **Level:** speech at about -15.6 dBFS, peak 0.73, so it needs no gain.
+- **Word times for the gates come from the model:** a forward hook on the duration predictor gives the frames of each letter, and the fixtures need no aligner and no second model. Against the first sound after a pause, measured at -40 dB, the marks sit 0.06 s early at p50 and within 0.19 to 0.27 s at p95. Gate S itself does not read them: they feed `t_src_start` errors and the real sync error. The Spanish voice is `facebook/mms-tts-spa`, which does have accents and `ñ`.

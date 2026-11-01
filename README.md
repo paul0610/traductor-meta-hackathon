@@ -1,8 +1,8 @@
 # traductor-meta-hackathon
 
-**OS-level simultaneous interpreter, Spanish ⇄ English, for any video call** (Meet, Zoom, Teams), built on Meta's **Muse Voice Transcribe** (realtime ASR) and **Muse Spark** (translation). You speak Spanish, or Spanglish, into your normal microphone and the other side hears fluent English through a virtual microphone. They speak English and you read Spanish subtitles. The call app needs no plugin: it just picks a different microphone.
+**OS-level simultaneous interpreter, Spanish ⇄ English, for any video call** (Meet, Zoom, Teams), built on Meta's **Muse Voice Transcribe** (realtime ASR), **Muse Spark** (translation) and **MMS-TTS** (the voice). You speak Spanish, or Spanglish, into your normal microphone and the other side hears fluent English through a virtual microphone. They speak English and you read Spanish subtitles. The call app needs no plugin: it just picks a different microphone.
 
-> **Pre-existing vs. built this week.** Before the hackathon I had a private prototype of the same idea built on other providers (Deepgram, gpt-4o-mini, Edge TTS). **Everything in this repository was written from scratch during the Meta Global AI Developer Hackathon (Oct 26 – Nov 4, 2026) on Meta models.** No code was copied from the prototype; only design lessons were carried over, and they are written out in [`docs/SPEC.md`](docs/SPEC.md). The commit history is the record.
+> **Pre-existing vs. built this week.** Before the hackathon I had a private prototype of the same idea built on other providers (Deepgram, gpt-4o-mini, Edge TTS). **Everything in this repository was written from scratch during the Meta Global AI Developer Hackathon (Oct 26 – Nov 4, 2026) on Meta models.** No code was copied from the prototype; only design lessons were carried over, and they are written out in [`docs/SPEC.md`](docs/SPEC.md). The commit history is the record. Earlier commits used a non-Meta text-to-speech engine; Meta's MMS-TTS replaced it on Nov 1 to comply with the rule that every model called at runtime must be Meta's.
 
 Track: **Indie Developer** · Theme: **Build for Your World**. I understand English but I am slow to speak it under pressure (interviews, meetings). This is "work in English today", not "learn English".
 
@@ -23,29 +23,39 @@ Work in progress during the hackathon week. Daily logs with measured numbers liv
 | Turns: their sustained speech takes the floor from my voice | done, measured with both fixtures talking over each other |
 | Context: the whole conversation and a glossary reach Spark | done, measured on latency and on ambiguous clauses |
 | One-button widget and draggable metrics line | done, used with a real mouse and real keys on the real windows; F7 and F10 not pressed, not yet used in a call |
-| Your own voice: an optional clone made in the widget, on this PC | done, approved by ear; a real call still to do |
+| Meta end to end: MMS-TTS on this PC is the voice | done, gates passed on synthetic voices; by ear and in a real call still to do |
 
 ## How it works (short)
 
 ```
-OUT: mic ─► Muse Voice Transcribe (es) ─► clause commits ─► Muse Spark (es→en) ─► Pocket TTS ─► scheduler ─► VB-CABLE ─► call app
+OUT: mic ─► Muse Voice Transcribe (es) ─► clause commits ─► Muse Spark (es→en) ─► MMS-TTS (local) ─► scheduler ─► VB-CABLE ─► call app
 IN:  system loopback ─► Muse Voice Transcribe (en) ─► Muse Spark (en→es) ─► subtitle overlay
 ```
 
 Design, contracts, clock model and safety rules: [`docs/SPEC.md`](docs/SPEC.md).
 
+### Meta models used and where they run
+
+| Model | What it does | Where it runs |
+|---|---|---|
+| Muse Voice Transcribe | Hears both sides, with turn and timing events | Meta Model API, cloud |
+| Muse Spark | Translates both ways | Meta Model API, cloud |
+| MMS-TTS (`facebook/mms-tts-eng`) | Speaks the English | Open weights, on this PC, CPU |
+
+`scripts/make_fixtures.py` also uses `facebook/mms-tts-spa`, for test voices only.
+
 Honest notes:
-- **Meta's Model API has no text-to-speech model** (checked against the docs, the live model list and the cookbook on Oct 30). Meta's open-weight MMS-TTS exists outside the API under a non-commercial license and is not used here. The English voice is Kyutai's Pocket TTS running on this PC, with Microsoft Edge TTS as its backup (`RTT_TTS_ENGINE`, `RTT_TTS_BACKUP`). Meta models do the listening (ASR, including turn and timing events) and the translating.
+- **Meta's Model API has no text-to-speech model** (checked against the docs, the live model list and the cookbook on Oct 30), so the voice is Meta's open-weight MMS-TTS on this PC. The voice is plain and single-speaker, chosen because the rules require Meta models end to end. It has no backup: nothing that is not Meta's runs, even when something fails.
 - Requires Windows 11, [VB-CABLE](https://vb-audio.com/Cable/) and headphones (with speakers the mic would re-translate the other side's voice).
 
 ## Run it
 
-Requires Windows 11, Python 3.13, [uv](https://docs.astral.sh/uv/), headphones, and [VB-CABLE](https://vb-audio.com/Cable/) (restart Windows after installing it). OBS Studio is only for the synchronized dub. The English voice, about 220 MB, downloads on first use with no account. The microphone is the Windows default unless `RTT_MIC_NAME` says otherwise.
+Requires Windows 11, Python 3.13, [uv](https://docs.astral.sh/uv/), headphones, and [VB-CABLE](https://vb-audio.com/Cable/) (restart Windows after installing it). OBS Studio is only for the synchronized dub. The English voice, about 150 MB, downloads on first use with no account. The microphone is the Windows default unless `RTT_MIC_NAME` says otherwise.
 
 ```powershell
 uv sync --locked
 copy .env.example .env   # then put your MODEL_API_KEY in .env, from https://dev.meta.ai
-uv run python scripts/test_cable.py          # Edge TTS -> CABLE Input, verified on CABLE Output
+uv run python scripts/test_cable.py          # the voice -> CABLE Input, verified on CABLE Output
 uv run python scripts/asr_live.py            # live mic -> Muse Voice Transcribe, events printed
 ```
 
@@ -60,15 +70,13 @@ Before a call, `uv run python scripts/warmcheck.py` tests everything a call need
 
 **The button.** Top right; drag it anywhere and it stays there next time. `CARGANDO`, then `LISTO`: nothing is captured until you click it. `CONECTANDO` lasts until the ASR and the camera are up, and the last 3 s of what you say meanwhile are kept. Then `EN VIVO`: the ring is the health of the sync (of the lag with no dub) and the number is the lag in seconds. `PAUSADO`: they took the floor. `MUDO`: F8. `VOZ CRUDA`: F9. A left click stops it once it runs, a right click from any state, loading included. It ends on `APAGADO`, and if the microphone could not be restored it says so.
 
-**The metrics line.** `LAG │ SYNC │ CORR │ TURNO │ ES→EN │ META`. What is down shows there and stays: `ASR CAÍDO`, `SUBTÍTULOS CAÍDOS`, `SIN CÁMARA RETRASADA`, `VOZ DE RESPALDO`, `SIN MÉTRICAS`, or the task that died. `META` counts from the click, not from loading. `TU VOZ` means your clone is speaking.
+**The metrics line.** `LAG │ SYNC │ CORR │ TURNO │ ES→EN │ META`. What is down shows there and stays: `ASR CAÍDO`, `SUBTÍTULOS CAÍDOS`, `SIN CÁMARA RETRASADA`, `SIN MÉTRICAS`, or the task that died. `META` counts from the click, not from loading.
 
 **The subtitle band.** At the bottom of the screen, as tall as what it has to say. What they say in English in grey, and in Spanish in white; below, what you said and how it came out. It fades after 9 s of silence so the call stays in view. If they take the floor while your voice is speaking it says `TE ESTÁN HABLANDO`, and what your voice did not get to say stays on it in amber.
 
 **Sounds.** A short cue when the button changes state, so you do not have to look at it: ready, live, muted and back, raw voice, they took the floor, stopping. They play on your headphones and never reach the cable. `RTT_SOUNDS=0` turns them off.
 
-**Your own voice (optional).** In `LISTO` a card offers to clone your voice. You read half a minute of English, the clone is made on this PC, and you hear your recording next to it before deciding. Say no and the standard voice speaks. The text opens with your consent, so clone only your own voice. The recording and the clone stay in `logs/voice`, which git ignores, and nothing is uploaded. `Borrar mi voz` deletes them. With a clone on, pressing the button plays the notice by itself, and the notice says the voice is a synthetic copy, because the other side would otherwise take it for you.
-
-Making a clone needs Pocket's gated weights: accept the terms at [huggingface.co/kyutai/pocket-tts](https://huggingface.co/kyutai/pocket-tts), sign in with `uvx hf auth login` and reopen the app. Access is approved automatically. Without it the card says so and nothing else changes. Using a clone already made does not need it.
+**The voice.** MMS-TTS only knows letters, apostrophes and hyphens: it loses digits, symbols, accents and punctuation in silence. Spark is asked to write numbers in words, and `tts/spoken.py` catches what gets through, so "$120" and "Núñez" are still said. `RTT_MMS_SPEAKING_RATE` sets the pace: lower is calmer, and the English then outlasts the Spanish it translates.
 
 To check it without speaking: `uv run python scripts/make_fixtures.py`, then `uv run python scripts/gate_60s.py` runs both chains on synthetic voices and judges the run from its log. `uv run python scripts/gate_sync.py` does the same for the dub, and also compares each clause's timing against the real word times of the fixture. With `--voice` it runs on your own voice and camera for 60 s, checks where each turn opens against the microphone, and leaves in `logs/` a 20 s clip of what the other side gets.
 
@@ -86,16 +94,37 @@ Dependencies are pinned exactly and locked (`uv.lock`), resolved with a supply-c
 
 ## Metrics
 
-Every run writes one JSONL line per event to `logs/` (fields in SPEC §4). Numbers are reported per day in `docs/log/` and summarized here at submission.
+Every run writes one JSONL line per event to `logs/` (fields in SPEC §4). Numbers are reported per day in `docs/log/`.
+
+Gates on synthetic voices, this PC, default settings, Nov 1. A real voice and a real call are still to come here.
+
+| Gate | Result |
+|---|---|
+| 0: Spanish in, English on the cable | 32 of 32 clauses played, 100 % of the bytes, 0 gaps |
+| 60 s, both directions | passes; commit to first PCM p50 1.72 s, p95 3.04 s |
+| S: dub, D 7.0 s, p95 of sync error at most 0.5 s | passes 4 of 4 runs: 0.23 to 0.38 s, none over 1 s late, none early |
+| MMS-TTS, whole clause ready | p50 0.60 s, p95 0.83 s, 164 clauses, 4 threads |
+
+Reproduce them with `scripts/make_fixtures.py`, then `scripts/gate_60s.py` and `scripts/gate_sync.py`.
 
 ## Roadmap (after the hackathon, no code this week)
 
 - **Milestone 2:** indigenous languages of Peru (Aymara, Quechua) with Meta's open-weight Omnilingual ASR.
 - **Milestone 3:** Peruvian Sign Language.
 
+## Other voices (not part of this submission)
+
+This submission runs Meta models only. `uv sync` installs nothing else, and a default run does not load it: `tests/test_mms.py` checks that. Nothing here is used in the demo or in any number above.
+
+The repo also keeps an engine from earlier in the week, for after the hackathon: Kyutai's Pocket TTS, with an optional clone of your own voice and Edge TTS behind it. `uv sync --extra pocket` and `RTT_TTS_ENGINE=pocket` turn it on; `RTT_TTS_BACKUP=edge` adds the backup.
+
+**Your own voice (optional).** In `LISTO` a card offers to clone your voice. You read half a minute of English, the clone is made on this PC, and you hear your recording next to it before deciding. Say no and the standard voice speaks. The text opens with your consent, so clone only your own voice. The recording and the clone stay in `logs/voice`, which git ignores, and nothing is uploaded. `Borrar mi voz` deletes them. With a clone on, pressing the button plays the notice by itself, and the notice says the voice is a synthetic copy, because the other side would otherwise take it for you.
+
+Making a clone needs Pocket's gated weights: accept the terms at [huggingface.co/kyutai/pocket-tts](https://huggingface.co/kyutai/pocket-tts), sign in with `uvx hf auth login` and reopen the app. Access is approved automatically. Without it the card says so and nothing else changes. Using a clone already made does not need it.
+
 ## Credits
 
-The local voice is [Pocket TTS](https://huggingface.co/kyutai/pocket-tts) by Kyutai, CC BY 4.0. The default voice, `michael`, comes from the VCTK corpus, CC BY 4.0. Both download on first use. Some Pocket voices come from non-commercial sets, listed in [kyutai/tts-voices](https://huggingface.co/kyutai/tts-voices). Pocket's terms bar cloning a voice without consent and passing generated audio as a real recording.
+The voice is [MMS-TTS](https://huggingface.co/facebook/mms-tts-eng) by Meta, CC BY-NC 4.0, downloaded on first use. Pocket TTS is by Kyutai, CC BY 4.0, and its voice `michael` comes from the VCTK corpus, CC BY 4.0. Some Pocket voices come from non-commercial sets, listed in [kyutai/tts-voices](https://huggingface.co/kyutai/tts-voices). Pocket's terms bar cloning a voice without consent and passing generated audio as a real recording.
 
 ## License
 
