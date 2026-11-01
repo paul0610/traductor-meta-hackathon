@@ -488,6 +488,7 @@ class Outgoing:
                   watchdog_trips=self.watchdog.trips, mode=self.args.mode, tts_reconnects=self.voice.reconnects,
                   tts_voice=self.voice.name, yields=self.yields, delay_s=self.delay_s, voice_under_db=self.settings.voice_under_db if self.delay_s > 0 else None,
                   delay_jumps=self.delay.jumps if self.delay is not None else 0,
+                  mic_lost_s=round(self.mic.lost_s, 3), mic_overflows=self.mic.overflows,
                   corrections_blocked=self.policy.corrections_blocked if self.policy is not None else 0)
 
 

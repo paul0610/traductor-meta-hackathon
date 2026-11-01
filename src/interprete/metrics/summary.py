@@ -52,7 +52,9 @@ def _dub(events: list[dict], out: list[dict]) -> dict | None:
                 sync_err_abs_p95_s=round(float(np.percentile(np.abs(errs), 95)), 3) if errs else None,
                 early_clauses=sum(e < -0.05 for e in errs), late_over_1s=sum(e > SYNC_LATE_MAX_S for e in errs),
                 catch_ups=sum(bool(e.get("catch_up")) for e in events if e["ev"] == "tts"),
-                delay_jumps=run.get("delay_jumps", 0))
+                delay_jumps=run.get("delay_jumps", 0), mic_lost_s=run.get("mic_lost_s"), mic_overflows=run.get("mic_overflows"),
+                # said so near the stop that its moment never came: the run was cut, the chain lost nothing
+                after_the_end=sum(r.get("t_play_start") is None and r["t_src_start"] + d > run.get("t", np.inf) for r in out))
 
 
 def summarize(events: list[dict]) -> dict:
@@ -104,9 +106,10 @@ def summarize(events: list[dict]) -> dict:
 def integrity_failures(s: dict) -> list[str]:
     o = s["out"]
     fails = []
-    if o["played"] + o["unsaid"] + o["fillers"] < o["commits"]:
+    cut = o["dub"]["after_the_end"] if o["dub"] else 0
+    if o["played"] + o["unsaid"] + o["fillers"] + cut < o["commits"]:
         fails.append(f"lost clauses: {o['played']} of {o['commits']} played, {o['unsaid']} given up to the other side, "
-                     f"{o['fillers']} only fillers")
+                     f"{o['fillers']} only fillers, {cut} after the end")
     if o["cable_gaps"]:
         fails.append(f"cable gaps: {o['cable_gaps']}")
     if o["bytes_pct"] is not None and o["bytes_pct"] < 100:

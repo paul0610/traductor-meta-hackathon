@@ -33,6 +33,12 @@ class MicCapture:
         self.rate = 0
         self.overflows = 0
         self.blocks = 0
+        self.t_first = self.t_last = 0.0
+
+    @property
+    def lost_s(self) -> float:
+        """Time the callbacks spanned minus the audio they brought: a gap moves every ASR position after it."""
+        return max(0.0, self.t_last - self.t_first - (self.blocks - 1) * self.block_ms / 1000) if self.blocks else 0.0
 
     def add_consumer(self, fn: Consumer) -> None:
         self._consumers.append(fn)
@@ -43,6 +49,8 @@ class MicCapture:
             self.overflows += 1
         block = indata[:, 0].copy() if indata.shape[1] == 1 else indata.mean(axis=1, dtype=np.float32)
         self.blocks += 1
+        self.t_first = self.t_first or t_capture
+        self.t_last = t_capture
         for fn in self._consumers:
             fn(t_capture, block)
 

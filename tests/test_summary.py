@@ -73,6 +73,21 @@ def test_gate_s_fails_on_spread_and_on_a_clause_a_second_late():
     assert any("past their deadline" in f for f in fails)
 
 
+def silent(seq, t_src_start):
+    return dict(ev="commit", phase="report", channel="out", seq=seq, t_commit=10.0, t_src_start=t_src_start)
+
+
+def test_a_clause_due_after_the_run_closed_is_not_lost():
+    s = summarize([dubbed(0, 0.0), silent(1, 30.0), end(), {**RUN, "t": 33.0}])
+    assert s["out"]["dub"]["after_the_end"] == 1
+    assert gate_s(s) == []
+
+
+def test_a_clause_that_had_its_moment_and_never_sounded_is_lost():
+    fails = gate_s(summarize([dubbed(0, 0.0), silent(1, 25.0), end(), {**RUN, "t": 33.0}]))
+    assert any("lost clauses" in f for f in fails)
+
+
 def test_gate_s_needs_a_dub():
     assert gate_s(summarize([out_row(0, 2.0), end()])) == ["no dubbed clause in this run"]
 
