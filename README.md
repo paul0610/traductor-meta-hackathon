@@ -102,8 +102,10 @@ Gates on synthetic voices, this PC, default settings, Nov 1. A real voice and a 
 |---|---|
 | 0: Spanish in, English on the cable | 32 of 32 clauses played, 100 % of the bytes, 0 gaps |
 | 60 s, both directions | passes; commit to first PCM p50 1.72 s, p95 3.04 s |
-| S: dub, D 7.0 s, p95 of sync error at most 0.5 s | passes 4 of 4 runs: 0.23 to 0.38 s, none over 1 s late, none early |
+| S: dub, D 7.0 s, p95 of sync error at most 0.5 s | passes 4 of 5 runs, 0.23 to 0.38 s; the fifth missed at 0.525 s. None over 1 s late, none early in any run |
 | MMS-TTS, whole clause ready | p50 0.60 s, p95 0.83 s, 164 clauses, 4 threads |
+
+When a clause is late it is because the English before it ran long, not because the voice or Spark were slow: late clauses were ready 1.5 s or more before their turn.
 
 Reproduce them with `scripts/make_fixtures.py`, then `scripts/gate_60s.py` and `scripts/gate_sync.py`.
 
@@ -112,19 +114,11 @@ Reproduce them with `scripts/make_fixtures.py`, then `scripts/gate_60s.py` and `
 - **Milestone 2:** indigenous languages of Peru (Aymara, Quechua) with Meta's open-weight Omnilingual ASR.
 - **Milestone 3:** Peruvian Sign Language.
 
-## Other voices (not part of this submission)
+## Third-party models and licenses
 
-This submission runs Meta models only. `uv sync` installs nothing else, and a default run does not load it: `tests/test_mms.py` checks that. Nothing here is used in the demo or in any number above.
+The voice is [MMS-TTS](https://huggingface.co/facebook/mms-tts-eng) by Meta, CC BY-NC 4.0, downloaded on first use.
 
-The repo also keeps an engine from earlier in the week, for after the hackathon: Kyutai's Pocket TTS, with an optional clone of your own voice and Edge TTS behind it. `uv sync --extra pocket` and `RTT_TTS_ENGINE=pocket` turn it on; `RTT_TTS_BACKUP=edge` adds the backup.
-
-**Your own voice (optional).** In `LISTO` a card offers to clone your voice. You read half a minute of English, the clone is made on this PC, and you hear your recording next to it before deciding. Say no and the standard voice speaks. The text opens with your consent, so clone only your own voice. The recording and the clone stay in `logs/voice`, which git ignores, and nothing is uploaded. `Borrar mi voz` deletes them. With a clone on, pressing the button plays the notice by itself, and the notice says the voice is a synthetic copy, because the other side would otherwise take it for you.
-
-Making a clone needs Pocket's gated weights: accept the terms at [huggingface.co/kyutai/pocket-tts](https://huggingface.co/kyutai/pocket-tts), sign in with `uvx hf auth login` and reopen the app. Access is approved automatically. Without it the card says so and nothing else changes. Using a clone already made does not need it.
-
-## Credits
-
-The voice is [MMS-TTS](https://huggingface.co/facebook/mms-tts-eng) by Meta, CC BY-NC 4.0, downloaded on first use. Pocket TTS is by Kyutai, CC BY 4.0, and its voice `michael` comes from the VCTK corpus, CC BY 4.0. Some Pocket voices come from non-commercial sets, listed in [kyutai/tts-voices](https://huggingface.co/kyutai/tts-voices). Pocket's terms bar cloning a voice without consent and passing generated audio as a real recording.
+The hackathon build uses only Meta models at runtime (table above). Non-Meta engines remain in the source as an uninstalled optional extra for a future commercial version and are not used, installed or demonstrated here. `tests/test_mms.py` checks in a clean process that a default run does not load them, and [`docs/SPEC.md`](docs/SPEC.md) §9 and §10 describe them.
 
 ## License
 
