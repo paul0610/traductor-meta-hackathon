@@ -48,7 +48,7 @@ def load() -> Settings:
         pocket_voice=os.environ.get("RTT_POCKET_VOICE", "michael"),
         pocket_gain_db=float(os.environ.get("RTT_POCKET_GAIN_DB", "3")),
         cable_name=os.environ.get("RTT_CABLE_NAME", "CABLE Input"),
-        mic_name=os.environ.get("RTT_MIC_NAME", "Realtek"),
+        mic_name=os.environ.get("RTT_MIC_NAME", ""),
         delay_s=float(os.environ.get("RTT_DELAY_S", "7.0")),
         voice_under_db=float(os.environ.get("RTT_VOICE_UNDER_DB", "-20")),
         av_offset_ms=float(os.environ.get("RTT_AV_OFFSET_MS", "0")),
@@ -63,5 +63,6 @@ def load() -> Settings:
 def require_api_key() -> str:
     key = load().api_key
     if not key:
-        raise SystemExit(f"MODEL_API_KEY is not set. Put it in {ROOT / '.env'} (see .env.example).")
+        raise SystemExit("MODEL_API_KEY is not set: copy .env.example to .env and put your key there. "
+                         "Get one at https://dev.meta.ai")
     return key

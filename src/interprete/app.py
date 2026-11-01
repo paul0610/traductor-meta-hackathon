@@ -822,6 +822,18 @@ async def run_app(args, ui) -> None:
     print(f"metrics: {metrics.path}")
 
 
+def preflight(args, settings: config.Settings) -> None:
+    """What a fresh machine lacks ends here, in one line, before any window opens."""
+    if not args.simulate:
+        config.require_api_key()
+    if not devices.candidates(settings.cable_name, "output"):
+        raise SystemExit(f"No audio output named {settings.cable_name!r}: install VB-CABLE from https://vb-audio.com/Cable/, "
+                         "restart Windows and run this again.")
+    if not devices.candidates(settings.mic_name, "input", ("CABLE",)):
+        raise SystemExit(f"No microphone matches RTT_MIC_NAME={settings.mic_name!r}: fix it in .env, or leave it empty "
+                         "for the Windows default.")
+
+
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     ap = argparse.ArgumentParser()
     ap.add_argument("--simulate", action="store_true", help="no API key: canned commits through TTS → cable")
@@ -846,6 +858,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
+    preflight(args, config.load())
     if args.no_overlay:
         asyncio.run(run_app(args, NoUi()))
         return

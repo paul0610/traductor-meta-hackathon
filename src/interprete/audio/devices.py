@@ -12,6 +12,7 @@ from dataclasses import dataclass
 import sounddevice as sd
 
 HOSTAPI_ORDER = ("Windows WASAPI", "Windows DirectSound", "MME")
+MME_NAME = 31
 
 
 @dataclass(frozen=True, slots=True)
@@ -28,8 +29,22 @@ class Device:
         return self.hostapi == "Windows WASAPI"
 
 
+def default_mic() -> str:
+    """Windows' default input, cut to what MME keeps of a name so its duplicates match too. Never the cable."""
+    for api in sd.query_hostapis():
+        if api["name"] == HOSTAPI_ORDER[0] and api["default_input_device"] >= 0:
+            name = sd.query_devices(api["default_input_device"])["name"]
+            return "" if "CABLE" in name.upper() else name[:MME_NAME]
+    return ""
+
+
 def candidates(name_sub: str, kind: str, exclude: tuple[str, ...] = ()) -> list[Device]:
-    """All endpoints whose name contains `name_sub`, best host API first. `kind` is "input" or "output"."""
+    """All endpoints whose name contains `name_sub`, best host API first. `kind` is "input" or "output".
+
+    An input with no name is the default microphone: a machine that is not this one has no mic called Realtek.
+    """
+    if kind == "input" and not name_sub:
+        name_sub = default_mic()
     apis = sd.query_hostapis()
     found: list[Device] = []
     for i, d in enumerate(sd.query_devices()):

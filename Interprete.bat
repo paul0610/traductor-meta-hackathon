@@ -8,11 +8,11 @@ set PYTHONIOENCODING=utf-8
 
 where uv >nul 2>nul
 if errorlevel 1 (
-    echo No encuentro uv en el PATH. Instalalo desde https://docs.astral.sh/uv/
+    echo uv is not on the PATH. Install it from https://docs.astral.sh/uv/
     goto end
 )
 if not exist ".env" (
-    echo Falta .env con MODEL_API_KEY. Copia .env.example a .env y pon tu clave.
+    echo MODEL_API_KEY is not set: copy .env.example to .env and put your key there. Get one at https://dev.meta.ai
     goto end
 )
 

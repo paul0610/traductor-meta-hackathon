@@ -21,7 +21,7 @@ Consumer = Callable[[float, np.ndarray], None]   # (t_capture, mono float32 bloc
 
 
 class MicCapture:
-    def __init__(self, name_sub: str = "Realtek", *, block_ms: int = 20,
+    def __init__(self, name_sub: str = "", *, block_ms: int = 20,
                  exclude: tuple[str, ...] = ("CABLE",), emit: Callable[..., None] | None = None) -> None:
         self.name_sub = name_sub
         self.exclude = exclude
