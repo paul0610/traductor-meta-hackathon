@@ -90,4 +90,4 @@ The local voice is [Pocket TTS](https://huggingface.co/kyutai/pocket-tts) by Kyu
 
 ## License
 
-MIT, see [LICENSE](LICENSE).
+PolyForm Noncommercial 1.0.0, see [LICENSE](LICENSE). Free for personal, educational, research and non-profit use. For commercial use write to paulrojas0610@gmail.com.

@@ -3,7 +3,7 @@ name = "interprete"
 version = "0.1.0"
 description = "OS-level simultaneous ES<->EN interpreter for video calls, built on Muse Voice Transcribe and Muse Spark"
 readme = "README.md"
-license = "MIT"
+license = "LicenseRef-PolyForm-Noncommercial-1.0.0"
 requires-python = ">=3.13,<3.14"
 dependencies = [
     "openai==3.37.0",
