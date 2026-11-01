@@ -42,6 +42,14 @@ def test_spanglish_rules_go_only_from_spanish():
     assert "cómo se dice" not in fake.systems[1]
 
 
+def test_only_english_is_asked_to_write_numbers_in_words():
+    spark, fake = with_script([(0.0, "Good morning"), (0.0, "Buenos días")])
+    asyncio.run(spark.translate("Buenos días"))
+    asyncio.run(spark.translate("Good morning", src="en", tgt="es"))
+    assert "forty percent" in fake.systems[0]
+    assert "forty percent" not in fake.systems[1]
+
+
 def test_a_clean_answer_takes_one_call():
     spark, fake = with_script([(0.0, "Good morning")])
     assert asyncio.run(spark.translate("Buenos días")).translation == "Good morning"

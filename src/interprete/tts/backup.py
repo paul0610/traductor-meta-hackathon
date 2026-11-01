@@ -1,15 +1,22 @@
-"""Which voice speaks: the local one, with Edge behind it unless `RTT_TTS_BACKUP=none`."""
+"""Which voice speaks: MMS by default, and nothing behind it, so a default run only ever calls Meta models.
+
+`RTT_TTS_ENGINE=pocket` brings back the local Pocket voice, with Edge behind it if `RTT_TTS_BACKUP=edge`.
+Neither is imported, let alone called, unless asked for; `uv sync --extra pocket` installs them.
+"""
 
 from __future__ import annotations
 
-from typing import Callable
+from typing import TYPE_CHECKING, Callable
 
 from ..config import Settings
 from ..hedge import hedged
-from .edge import TtsResult
-from .edge_session import EdgeVoice
-from .own_voice import Store
-from .pocket import PocketVoice
+from .mms import MmsVoice
+from .shaping import TtsResult
+
+if TYPE_CHECKING:
+    from .edge_session import EdgeVoice
+    from .own_voice import Store
+    from .pocket import PocketVoice
 
 BACKUP_AFTER_S = 3.0           # the worst local clause is 1.7 s, and one may wait behind another
 
@@ -58,13 +65,19 @@ class WithBackup:
 
 
 def local_voice(voice) -> PocketVoice | None:
-    """The one that can take a clone, once it loaded."""
+    """The one that can take a clone, once it loaded. MMS has one speaker and cannot."""
     local = voice.primary if isinstance(voice, WithBackup) else voice
-    return local if isinstance(local, PocketVoice) and local.tts is not None else None
+    return local if hasattr(local, "clone") and local.tts is not None else None
 
 
 def make_voice(s: Settings, out_rate: int, *, size: int, emit: Callable[..., None] | None = None,
                store: Store | None = None):
+    if s.tts_engine == "mms":
+        return MmsVoice(s.mms_model, out_rate, speaking_rate=s.mms_speaking_rate)
+    from .edge_session import EdgeVoice
+    from .own_voice import Store
+    from .pocket import PocketVoice
+
     edge = EdgeVoice(s.tts_voice, out_rate, size=size, emit=emit)
     if s.tts_engine == "edge":
         return edge

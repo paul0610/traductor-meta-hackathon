@@ -3,11 +3,13 @@ import dataclasses
 
 import pytest
 
-from interprete import config
-from interprete.tts import backup
-from interprete.tts.backup import WithBackup, make_voice
-from interprete.tts.edge_session import EdgeVoice
-from interprete.tts.pocket import PocketVoice
+pytest.importorskip("edge_tts")
+
+from interprete import config  # noqa: E402
+from interprete.tts import backup  # noqa: E402
+from interprete.tts.backup import WithBackup, make_voice  # noqa: E402
+from interprete.tts.edge_session import EdgeVoice  # noqa: E402
+from interprete.tts.pocket import PocketVoice  # noqa: E402
 
 
 class FakeVoice:

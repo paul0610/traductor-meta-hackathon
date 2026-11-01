@@ -1,6 +1,6 @@
 """The interpreter, both directions.
 
-OUT: mic → Muse Voice Transcribe → Muse Spark → Edge TTS → scheduler → CABLE Input (the other side only hears English)
+OUT: mic → Muse Voice Transcribe → Muse Spark → MMS-TTS → scheduler → CABLE Input (the other side only hears English)
 IN:  system loopback → Muse Voice Transcribe → Muse Spark → subtitle overlay
 
     uv run python -m interprete.app                  # until Ctrl-C
@@ -17,12 +17,14 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import importlib.util
 import json
 import os
 import sys
 import time
 from contextlib import nullcontext
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
 import openai
@@ -52,11 +54,13 @@ from .policy.incremental import Incremental
 from .policy.scheduler import MT_TIMEOUT_S, TTS_TIMEOUT_S, Scheduler
 from .safety import ExitGuard, Watchdog
 from .tts.backup import local_voice, make_voice
-from .tts.edge import FAST_RATE_PCT
-from .tts.own_voice import Enrollment, Store
+from .tts.shaping import FAST_RATE_PCT
 from .turns.floor import Floor
 from .ui.status import Phase, health, metrics_line, running
 from .video.virtual_cam import VirtualCam
+
+if TYPE_CHECKING:
+    from .tts.own_voice import Enrollment
 
 MT_ERRORS = (TimeoutError, openai.APIError, json.JSONDecodeError, KeyError)
 LANGUAGE_BIAS = ["en", "es"]    # this order keeps the most Spanish inside English speech, and pure Spanish stays intact
@@ -423,6 +427,8 @@ class Outgoing:
         local = local_voice(self.voice)
         if local is None:
             return None
+        from .tts.own_voice import Enrollment, Store
+
         return Enrollment(local, Store(), self.settings.pocket_voice, self.settings.mic_name, emit=self.emit,
                           on_voice=lambda: self.ui.bar(self.ready_line()))
 
@@ -826,6 +832,9 @@ def preflight(args, settings: config.Settings) -> None:
     """What a fresh machine lacks ends here, in one line, before any window opens."""
     if not args.simulate:
         config.require_api_key()
+    for engine in {settings.tts_engine, settings.tts_backup} - {"mms", "none"}:
+        if importlib.util.find_spec(f"{engine}_tts") is None:
+            raise SystemExit(f"The {engine} voice is not part of this build: use RTT_TTS_ENGINE=mms, or run uv sync --extra pocket.")
     if not devices.candidates(settings.cable_name, "output"):
         raise SystemExit(f"No audio output named {settings.cable_name!r}: install VB-CABLE from https://vb-audio.com/Cable/, "
                          "restart Windows and run this again.")

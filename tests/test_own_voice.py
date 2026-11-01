@@ -7,9 +7,11 @@ import numpy as np
 import pytest
 import soundfile as sf
 
-from interprete.tts import own_voice
-from interprete.tts.backup import WithBackup, local_voice, make_voice
-from interprete.tts.edge_session import EdgeVoice
+pytest.importorskip("edge_tts")
+
+from interprete.tts import own_voice  # noqa: E402
+from interprete.tts.backup import WithBackup, local_voice, make_voice  # noqa: E402
+from interprete.tts.edge_session import EdgeVoice  # noqa: E402
 from interprete.tts.own_voice import (FORGET, MAX_S, MAX_SPEED, MIN_S, NO_ACCESS, OFFER, OWN, PACE_TEXTS, READ, STANDARD, TERMS_URL,
                                       TYPICAL_CHARS, TYPICAL_S, Enrollment, Store, clip_speed, fit_pace, review)
 from interprete.tts.pocket import PACE, PocketVoice

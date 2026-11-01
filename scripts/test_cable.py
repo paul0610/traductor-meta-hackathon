@@ -1,7 +1,6 @@
-"""Edge TTS → scheduler (D = 0) → mixer → CABLE Input, verified by recording CABLE Output.
+"""The voice → scheduler (D = 0) → mixer → CABLE Input, verified by recording CABLE Output.
 
-Measures: Edge time-to-first-byte and total synthesis, MP3 decode (soundfile vs
-ffmpeg), silence trimmed, cable latency (mixer start → audio on CABLE Output),
+Measures: synthesis, silence trimmed, cable latency (mixer start → audio on CABLE Output),
 integrity (correlation of what was written vs what came out) and gaps.
 
     uv run python scripts/test_cable.py
@@ -12,7 +11,6 @@ from __future__ import annotations
 import argparse
 import asyncio
 import statistics
-import subprocess
 import time
 import wave
 from pathlib import Path
@@ -26,7 +24,7 @@ from interprete.clock import now
 from interprete.contracts import Channel, PcmChunk
 from interprete.metrics.jsonl import Metrics
 from interprete.policy.scheduler import Scheduler
-from interprete.tts.edge import decode_mp3, synthesize
+from interprete.tts.backup import make_voice
 
 PHRASES = [
     "Good morning, thanks for having me today.",
@@ -51,40 +49,26 @@ def pctl(xs: list[float], q: float) -> float:
 
 
 async def main() -> None:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--voice", default=config.load().tts_voice)
-    args = ap.parse_args()
+    argparse.ArgumentParser(description=__doc__).parse_args()
     settings = config.load()
     metrics = Metrics(run_name="test_cable")
 
     mixer = CableMixer(settings.cable_name, emit=metrics.emit)
     print(f"cable: {mixer.device.name} [{mixer.device.hostapi}] {mixer.rate} Hz")
 
-    # 1) Edge TTS timings
+    # 1) voice timings
+    voice = make_voice(settings, mixer.rate, size=1, emit=metrics.emit)
+    await voice.start()
     results = []
     for text in PHRASES:
-        r = await synthesize(text, args.voice, mixer.rate)
+        r = await voice.say(text)
         results.append(r)
         metrics.emit("tts", text=text, ttfb_s=r.t_first - r.t_request, synth_s=r.t_end - r.t_request,
-                     post_s=r.t_ready - r.t_end, decode_s=r.decode_s, trimmed_lead_s=r.trimmed_lead_s,
-                     trimmed_tail_s=r.trimmed_tail_s, duration_s=r.duration_s, mp3_bytes=r.mp3_bytes)
+                     post_s=r.t_ready - r.t_end, trimmed_lead_s=r.trimmed_lead_s,
+                     trimmed_tail_s=r.trimmed_tail_s, duration_s=r.duration_s)
         print(f"  ttfb {r.t_first - r.t_request:.3f}s  synth {r.t_end - r.t_request:.3f}s  "
-              f"decode {r.decode_s * 1000:.1f}ms  trim lead {r.trimmed_lead_s * 1000:.0f}ms "
+              f"trim lead {r.trimmed_lead_s * 1000:.0f}ms "
               f"tail {r.trimmed_tail_s * 1000:.0f}ms  dur {r.duration_s:.2f}s  {text}")
-
-    # decode comparison on the last MP3: soundfile in-process vs ffmpeg subprocess
-    mp3 = bytearray()
-    import edge_tts
-    async for part in edge_tts.Communicate(PHRASES[0], args.voice).stream():
-        if part["type"] == "audio":
-            mp3 += part["data"]
-    t0 = now()
-    decode_mp3(bytes(mp3))
-    sf_ms = (now() - t0) * 1000
-    t0 = now()
-    subprocess.run(["ffmpeg", "-v", "quiet", "-i", "pipe:0", "-f", "s16le", "-ac", "1", "-ar", str(mixer.rate), "pipe:1"],
-                   input=bytes(mp3), capture_output=True, check=True)
-    ff_ms = (now() - t0) * 1000
 
     # 2) two chunks back-to-back through the scheduler into the cable, recorded on CABLE Output
     sched = Scheduler(mixer, 0.0, emit=metrics.emit)
@@ -130,7 +114,6 @@ async def main() -> None:
     summary = dict(
         tts_ttfb_p50=statistics.median(ttfb), tts_ttfb_p95=pctl(ttfb, 95),
         tts_synth_p50=statistics.median(synth), tts_synth_p95=pctl(synth, 95),
-        decode_soundfile_ms=sf_ms, decode_ffmpeg_ms=ff_ms,
         trim_lead_ms=statistics.median(r.trimmed_lead_s * 1000 for r in results),
         trim_tail_ms=statistics.median(r.trimmed_tail_s * 1000 for r in results),
         cable_latency_ms=[round(x * 1000, 1) for x in lat], correlation=[round(x, 4) for x in corrs],

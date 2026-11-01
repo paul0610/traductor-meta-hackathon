@@ -41,7 +41,7 @@ def test_with_no_key_it_ends_in_one_line_that_says_what_to_do():
 
 
 def settings(**over):
-    return SimpleNamespace(**{"cable_name": "CABLE Input", "mic_name": "", **over})
+    return SimpleNamespace(**{"cable_name": "CABLE Input", "mic_name": "", "tts_engine": "mms", "tts_backup": "none", **over})
 
 
 def test_without_the_cable_it_says_where_to_get_it(monkeypatch):
@@ -49,6 +49,13 @@ def test_without_the_cable_it_says_where_to_get_it(monkeypatch):
     monkeypatch.setattr(devices, "candidates", lambda *a: [])
     with pytest.raises(SystemExit, match="vb-audio.com"):
         app.preflight(SimpleNamespace(simulate=False), settings())
+
+
+def test_a_voice_that_is_not_installed_says_how_to_get_it(monkeypatch):
+    monkeypatch.setattr(config, "require_api_key", lambda: "key")
+    monkeypatch.setattr(app.importlib.util, "find_spec", lambda name: None)
+    with pytest.raises(SystemExit, match="uv sync --extra pocket"):
+        app.preflight(SimpleNamespace(simulate=False), settings(tts_engine="pocket"))
 
 
 def test_a_mic_that_is_not_here_is_named(monkeypatch):

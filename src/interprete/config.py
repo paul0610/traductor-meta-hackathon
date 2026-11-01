@@ -23,6 +23,8 @@ class Settings:
     tts_engine: str
     tts_backup: str
     tts_voice: str
+    mms_model: str
+    mms_speaking_rate: float
     pocket_model: str
     pocket_voice: str
     pocket_gain_db: float
@@ -42,9 +44,11 @@ class Settings:
 def load() -> Settings:
     return Settings(
         api_key=os.environ.get("MODEL_API_KEY") or None,
-        tts_engine=os.environ.get("RTT_TTS_ENGINE", "pocket"),
-        tts_backup=os.environ.get("RTT_TTS_BACKUP", "edge"),
+        tts_engine=os.environ.get("RTT_TTS_ENGINE", "mms"),
+        tts_backup=os.environ.get("RTT_TTS_BACKUP", "none"),
         tts_voice=os.environ.get("RTT_TTS_VOICE", "en-US-GuyNeural"),
+        mms_model=os.environ.get("RTT_MMS_MODEL", "facebook/mms-tts-eng"),
+        mms_speaking_rate=float(os.environ.get("RTT_MMS_SPEAKING_RATE", "1.45")),
         pocket_model=os.environ.get("RTT_POCKET_MODEL", "english"),
         pocket_voice=os.environ.get("RTT_POCKET_VOICE", "michael"),
         pocket_gain_db=float(os.environ.get("RTT_POCKET_GAIN_DB", "3")),

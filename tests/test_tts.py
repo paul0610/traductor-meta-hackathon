@@ -1,4 +1,4 @@
-from interprete.tts.edge import FAST_RATE_PCT, isochrony_pct
+from interprete.tts.shaping import FAST_RATE_PCT, isochrony_pct
 
 
 def test_a_clause_that_fits_keeps_the_normal_rate():

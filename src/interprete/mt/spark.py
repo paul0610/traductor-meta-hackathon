@@ -45,6 +45,11 @@ SPANGLISH = (         # only from Spanish: what the ASR does to Spanish inside E
     "\"paces\" is \"países\". Read such text as what was really said."
 )
 
+SPOKEN = (            # MMS-TTS has no digits or symbols: what stays in them is lost, tts/spoken.py catches what slips through
+    " Your English is read aloud by a speech synthesizer: write numbers, dates, times, money, percentages and symbols "
+    "out in words, as they are said: \"forty percent\", \"three thirty\", \"twenty dollars\"."
+)
+
 GLOSSARY = " Always render these terms this way: {terms}."
 CONTEXT = (
     "\n\nConversation so far, in English, for you to understand who means what. Never translate it, repeat it or "
@@ -98,7 +103,7 @@ class Spark:
                         on_hedge: Callable[[], None] | None = None) -> MtResult:
         """A failed or empty answer is asked again at once, and a slow one races a second call."""
         system = SYSTEM.format(src=LANG[src], tgt=LANG[tgt]) + (FRAGMENT if fragment else "") + (SPANGLISH if src == "es" else "")
-        system += self._terms(src) + (CONTEXT.format(conversation=context) if context else "")
+        system += (SPOKEN if tgt == "en" else "") + self._terms(src) + (CONTEXT.format(conversation=context) if context else "")
         messages = [{"role": "system", "content": system}]
         for said, translated in history or []:
             messages.append({"role": "user", "content": said})

@@ -12,7 +12,6 @@ dependencies = [
     "numpy==2.5.4",
     "soxr==1.1.0",
     "soundfile==0.14.0",
-    "edge-tts==7.3.1",
     "keyboard==0.13.5",
     "pydantic==2.14.1",
     "python-dotenv==1.2.4",
@@ -21,11 +20,16 @@ dependencies = [
     "comtypes==1.4.17",
     "pyside6-essentials==6.12.0",
     "qasync==0.28.0",
-    "aiohttp==3.14.5",
     "opencv-python==4.14.0.94",
     "pyvirtualcam==0.15.0",
-    "pocket-tts==4.0.1",
+    "torch==2.14.1",
+    "transformers==5.20.2",
+    "num2words==0.5.14",
 ]
+
+[project.optional-dependencies]
+# Not part of the hackathon build, which only runs Meta models: `uv sync --extra pocket` and RTT_TTS_ENGINE=pocket.
+pocket = ["aiohttp==3.14.5", "edge-tts==7.3.1", "pocket-tts==4.0.1"]
 
 [dependency-groups]
 dev = ["pytest==9.1.1"]

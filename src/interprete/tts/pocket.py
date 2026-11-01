@@ -19,7 +19,7 @@ import numpy as np
 import soxr
 
 from ..clock import now
-from .edge import S_PER_CHAR, S_PER_CLAUSE, TtsResult, isochrony_pct, trim_silence
+from .shaping import S_PER_CHAR, S_PER_CLAUSE, TtsResult, isochrony_pct, trim_silence
 from .stretch import wsola
 
 THREADS = 2                    # 4 costs twice the cores for 10 % less time; the call needs them too

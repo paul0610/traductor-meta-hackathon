@@ -63,7 +63,7 @@ class PcmChunk:                        # audio ready for the cable; created by t
     commit_id: int
     seq: int                           # ★ copied from the Commit
     channel: Channel
-    pcm: bytes                         # int16 LE mono at the cable's real sample rate, Edge silences trimmed
+    pcm: bytes                         # int16 LE mono at the cable's real sample rate, silences trimmed
     sample_rate: int
     duration_s: float
     t_src_start: float

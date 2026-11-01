@@ -4,7 +4,7 @@ import time
 import numpy as np
 import pytest
 
-from interprete.tts.edge import S_PER_CHAR, S_PER_CLAUSE
+from interprete.tts.shaping import S_PER_CHAR, S_PER_CLAUSE
 from interprete.tts.pocket import FULL_SCALE, PACE, WARM_TEXT, PocketVoice, max_audio_s
 
 RATE = 24000

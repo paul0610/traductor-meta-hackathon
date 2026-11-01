@@ -1,7 +1,11 @@
 import asyncio
 
-from interprete.tts import edge_session
-from interprete.tts.edge_session import EdgeVoice
+import pytest
+
+pytest.importorskip("edge_tts")
+
+from interprete.tts import edge_session  # noqa: E402
+from interprete.tts.edge_session import EdgeVoice  # noqa: E402
 
 
 class FakeSocket:
