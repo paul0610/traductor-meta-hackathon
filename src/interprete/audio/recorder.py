@@ -11,6 +11,8 @@ import sounddevice as sd
 from ..clock import block_start
 from . import devices
 
+GAP_S = 0.05                   # callbacks move about; this far behind the clock, audio was lost
+
 
 class Recorder:
     def __init__(self, name_sub: str = "CABLE Output") -> None:
@@ -35,7 +37,17 @@ class Recorder:
         self._stream.close()
 
     def signal(self) -> tuple[float, np.ndarray]:
-        return self.blocks[0][0], np.concatenate([b for _, b in self.blocks])
+        """Lost stretches come back as silence: without them everything after sits too early on the file."""
+        t0 = self.blocks[0][0]
+        parts, at = [], 0
+        for t, block in self.blocks:
+            behind = round((t - t0) * self.rate) - at
+            if behind > self.rate * GAP_S:
+                parts.append(np.zeros(behind, np.float32))
+                at += behind
+            parts.append(block)
+            at += len(block)
+        return t0, np.concatenate(parts)
 
     def save(self, path: Path | str) -> Path:
         _, x = self.signal()

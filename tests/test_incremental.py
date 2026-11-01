@@ -1,6 +1,6 @@
 from interprete.clock import StreamClock
 from interprete.contracts import AsrEvent, AsrKind, Channel
-from interprete.policy.incremental import MAX_CLAUSE_S, MAX_WORDS, PAUSE_S, WORD_LAG_S, Incremental
+from interprete.policy.incremental import MAX_CLAUSE_S, MAX_WORDS, PAUSE_S, TO_FIRST_WORD_S, WORD_LAG_S, Incremental
 
 
 class Script:
@@ -162,13 +162,45 @@ def test_first_clause_starts_at_speech_start_later_ones_on_the_line_through_thei
     s.start()
     s.grow("Terminé el reporte ayer pero nadie lo leyó", step=0.4)
     s.send(AsrKind.SPEECH_END)
-    assert abs(s.commits[0].t_src_start - 101.0) < 1e-9
+    assert abs(s.commits[0].t_src_start - (101.0 + TO_FIRST_WORD_S)) < 1e-9
     assert s.commits[0].t_src_source == "speech_start"
     # "pero" first showed up in the 5th partial, audio position 1.0 + 4 × 0.4; evenly spaced words: right on the line
     assert abs(s.commits[1].t_src_start - (100.0 + 1.0 + 4 * 0.4 - WORD_LAG_S)) < 1e-9
     assert s.commits[1].t_src_source == "partial_arrival"
     # a clause ends where the next word would start
     assert abs(s.commits[1].t_src_end - (100.0 + 1.0 + 8 * 0.4 - WORD_LAG_S)) < 1e-9
+
+
+def two_clauses(onsets):
+    """Slow words, cut by time: three from 101.26, so the next clause has no opening before 102.01; the words place it near 102.1."""
+    s = Script()
+    s.p.onsets = onsets
+    s.start()
+    s.grow("Terminé el reporte ayer pero nadie lo leyó", step=0.6)
+    s.send(AsrKind.SPEECH_END)
+    return s
+
+
+def test_a_clause_starts_where_the_mic_heard_its_phrase_open():
+    s = two_clauses([102.05])
+    assert s.commits[1].t_src_start == 102.05
+    assert s.commits[1].t_src_source == "mic_onset"
+
+
+def test_an_opening_is_taken_once():
+    s = two_clauses([101.3])
+    assert s.commits[0].t_src_start == 101.3
+    assert s.commits[1].t_src_source == "partial_arrival"
+
+
+def test_an_opening_inside_the_clause_before_is_not_the_next_ones():
+    s = two_clauses([101.9])                         # a pause inside the first clause, not the start of the second
+    assert s.commits[1].t_src_source == "partial_arrival"
+
+
+def test_with_no_opening_near_the_words_decide():
+    s = two_clauses([90.0, 120.0])
+    assert "mic_onset" not in [c.t_src_source for c in s.commits]
 
 
 def test_a_word_that_surfaces_late_is_pulled_back_by_its_neighbours():

@@ -48,7 +48,7 @@ class Commit:                          # one committed clause; irreversible from
     boundary: str                      # "punct" | "conj" | "pause" | "speechEnd" | "speechComplete" | "words" | "time"
     t_src_start: float                 # ★ local clock: when it started being said (SPEC §7.4)
     t_src_end: float | None            # local clock: when it ended being said (None if unknown yet)
-    t_src_source: str                  # "asr_ts" | "speech_start" | "partial_arrival"
+    t_src_source: str                  # "mic_onset" | "speech_start" | "partial_arrival"
     t_commit: float                    # ★ perf_counter when the commit was created
     text_tgt: str = ""                 # filled by mt/
     remainder: str = ""                # structured-output "remainder" (policy v2); empty in plain LA-2

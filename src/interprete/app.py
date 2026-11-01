@@ -38,6 +38,7 @@ from .audio.device_restore import app_volume, endpoint_volume, restore_mic
 from .audio.fixture import RATE as FIXTURE_RATE
 from .audio.fixture import read_wav, replay
 from .audio.loopback import LoopbackCapture
+from .audio.onsets import SpeechOnsets
 from .audio.recorder import Recorder
 from .audio.ring import Ring
 from .clock import now
@@ -136,6 +137,7 @@ class Outgoing:
         self.held = False                           # gave way: my clauses wait until their turn ends
         self.yields = 0
         self.unsaid: list[str] = []                  # on screen in grey, to say again
+        self.speech = SpeechOnsets()
         self.t_start = now()
         self.asr: MetaRealtimeAsr | None = None
         self.spark: Spark | None = None
@@ -148,6 +150,7 @@ class Outgoing:
                                    keywords=[*spark.glossary] or None, emit=self.emit)
         self.spark = spark
         self.policy = POLICIES[self.args.mode](Channel.OUT, self.asr.clock.to_local, emit=self.emit)
+        self.policy.onsets = self.speech.onsets
 
     def start_audio(self) -> None:
         self.t_start = now()
@@ -164,6 +167,7 @@ class Outgoing:
                     self.delay.write(y)
 
             self.mic.add_consumer(to_cable)
+            self.mic.add_consumer(self.speech.feed)
             self.mixer.mic = ring
             if not self.args.simulate:
                 self.mic.add_consumer(QueueFeeder(self.loop, self.q_pcm, To16k(self.mic.rate)))
@@ -217,8 +221,10 @@ class Outgoing:
             if self.fixture_start is None:
                 self.fixture_start = t_capture
                 self.emit("state", what="fixture_start", t_start=t_capture)
+            block = np.frombuffer(pcm, "<i2").astype(np.float32) / 32768.0
+            self.speech.feed(t_capture, block)
             if self.delay is not None:
-                self.delay.write(rs.resample_chunk(np.frombuffer(pcm, "<i2").astype(np.float32) / 32768.0))
+                self.delay.write(rs.resample_chunk(block))
 
         return tap
 

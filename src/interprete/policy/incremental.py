@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from typing import Callable
+from typing import Callable, Iterable
 
 import numpy as np
 
@@ -30,6 +30,10 @@ MAX_WORDS = 8                   # SPEC asks 6 to 10; D's arithmetic asks for the
 MAX_CLAUSE_S = 1.6              # every 0.4 s here is 0.4 s less of D, with the same translation over 6 runs
 PAUSE_S = 0.7                   # audio with no new word. Shorter cuts plain speech: at 0.4, 38 clauses for 32 and gate S failed
 WORD_LAG_S = 0.7                # a word starts this long before a partial first shows it (fixture truth, p50 0.69)
+TO_FIRST_WORD_S = 0.26          # `speechStart` reports a position this long before the first word (truth, p50 0.26)
+ONSET_BEFORE_S = 1.6            # how far the words can place a clause after its phrase opened (real voice, worst 1.53)
+ONSET_AFTER_S = 0.4             # and before it
+WORD_S = 0.25                   # an opening sooner than this per word of the clause before is inside that clause
 WORDS_BEFORE = 6                # how far back the line through the words looks
 CLOSES_CLAUSE = re.compile(r"[,.;:?!…]$")
 CONJUNCTIONS = frozenset({
@@ -67,9 +71,11 @@ class Incremental:
         self.channel = channel
         self.to_local = to_local
         self.lat_asr_s = lat_asr_s
+        self.onsets: Iterable[float] = ()                   # where the mic heard a phrase open
         self._emit = emit or (lambda ev, **f: None)
         self._turns: dict[str, _Turn] = {}
         self._seq = 0
+        self._t_free = float("-inf")                        # the last clause cannot have ended before this
         self.corrections_blocked = 0
 
     def take_seq(self) -> int:
@@ -103,14 +109,23 @@ class Incremental:
         slope, origin = np.polyfit(np.arange(lo, last + 1), turn.first_seen[lo:last + 1], 1)
         return float(origin + slope * word) - WORD_LAG_S
 
+    def _opening(self, t: float) -> float | None:
+        """The phrase opening nearest `t`, past the clause before: the lips start there, whatever the words say."""
+        near = [o for o in tuple(self.onsets) if t - ONSET_BEFORE_S <= o <= t + ONSET_AFTER_S and o >= self._t_free]
+        return min(near, key=lambda o: abs(o - t), default=None)
+
     def _make(self, turn: _Turn, ev: AsrEvent, n: int, boundary: str) -> Commit:
         start = len(turn.committed)
         clause = turn.words[start:start + n]
         last = start + n - 1
         if start == 0 and turn.t_start is not None:
-            t_src_start, source = turn.t_start, "speech_start"
+            t_src_start, source = turn.t_start + TO_FIRST_WORD_S, "speech_start"
         else:
             t_src_start, source = self._said_at(turn, start, last), "partial_arrival"
+        opening = self._opening(t_src_start)
+        if opening is not None:
+            t_src_start, source = opening, "mic_onset"
+        self._t_free = max(self._t_free, t_src_start + n * WORD_S)
         t_end = self._said_at(turn, last + 1, last)
         commit = Commit(
             utterance_id=f"{self.channel.value}:{ev.session_id}:{ev.turn_id}", commit_id=turn.commit_id,

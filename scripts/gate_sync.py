@@ -42,7 +42,7 @@ AFTER_S = 15.0
 BEEP = (880, 400)              # the speaker is looking at the camera, not at the terminal
 CLIP_S = 20.0
 CLIP_SOURCE = "video=OBS Virtual Camera:audio=CABLE Output (VB-Audio Virtual Cable)"
-MATCH_S = 1.0                  # a turn further than this from a clause's start is not that clause's
+MATCH_S = 1.6                  # a phrase further than this from a clause's start is not that clause's
 
 
 def new_log(before: set[Path]) -> Path:
@@ -131,7 +131,7 @@ def source_errors(events: list[dict], delay_s: float) -> None:
                    and e.get("channel") == "out" and e.get("text_src")), key=lambda e: e["seq"])
     truth = clause_truth(rows, json.loads(words_path.read_text(encoding="utf-8")), start["t_start"])
     print(f"cláusulas con verdad: {len(truth)} de {len(rows)}")
-    for source in ("speech_start", "partial_arrival"):
+    for source in ("mic_onset", "speech_start", "partial_arrival"):
         errs = [r["t_src_start"] - truth[r["seq"]] for r in rows if r["seq"] in truth and r["t_src_source"] == source]
         print(f"  t_src_start - verdad, {source}: {_stats(errs)}")
     real = [r["t_play_start"] - (truth[r["seq"]] + delay_s) for r in rows
@@ -145,23 +145,29 @@ def source_errors(events: list[dict], delay_s: float) -> None:
 
 
 def real_voice_errors(events: list[dict], delay_s: float, offset_s: float) -> None:
-    """A real voice has no word times, but a turn that opens after a pause shows in the microphone."""
+    """What the other side sees, which `sync_err` cannot show: a phrase that opens after a pause is in the microphone, and the lips open there."""
     rec = state(events, "mic_recording")
     if rec is None:
         return
     x, rate = read_recording(rec)
     onsets = turn_onsets(x, rate, rec["t_start"])
     rows = [e for e in events if e["ev"] == "commit" and e.get("phase") == "report" and e.get("channel") == "out"
-            and e.get("t_src_source") == "speech_start"]
-    pairs = []
-    for r in rows:
-        t = min(onsets, key=lambda o: abs(o - r["t_src_start"]), default=None)
-        if t is not None and abs(t - r["t_src_start"]) <= MATCH_S:
-            pairs.append((r, t))
-    print(f"turnos en el micrófono: {len(onsets)}; cláusulas que abren turno: {len(rows)}; emparejadas: {len(pairs)}")
+            and e.get("t_play_start") is not None]
+    nearest: dict[int, tuple[dict, float]] = {}
+    for t in onsets:
+        r = min(rows, key=lambda r: abs(r["t_src_start"] - t), default=None)
+        held = nearest.get(r["seq"]) if r is not None else None
+        if r is not None and abs(r["t_src_start"] - t) <= MATCH_S and (held is None or abs(r["t_src_start"] - t) < abs(r["t_src_start"] - held[1])):
+            nearest[r["seq"]] = (r, t)
+    pairs = list(nearest.values())
+    print(f"frases en el micrófono: {len(onsets)}; con su cláusula: {len(pairs)}; ancladas al micrófono: "
+          f"{sum(r['t_src_source'] == 'mic_onset' for r in rows)} de {len(rows)}")
     print(f"  t_src_start - inicio real: {_stats([r['t_src_start'] - t for r, t in pairs])}")
-    lips = [r["t_play_start"] - (t + delay_s + offset_s) for r, t in pairs if r.get("t_play_start") is not None]
-    print(f"  voz inglesa - labios en la cámara retrasada: {_stats(lips)}")
+    lips = [r["t_play_start"] - (t + delay_s + offset_s) for r, t in pairs]
+    print(f"  voz inglesa - labios al abrir frase: {_stats(lips)}")
+    if lips:
+        off = np.abs(lips)
+        print(f"  p95 de |error| {np.percentile(off, 95):.3f} s; más de 0,5 s: {int((off > 0.5).sum())}; más de 1 s: {int((off > 1.0).sum())}")
 
 
 def voice_delay(events: list[dict]) -> None:
