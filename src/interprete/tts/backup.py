@@ -8,6 +8,7 @@ from ..config import Settings
 from ..hedge import hedged
 from .edge import TtsResult
 from .edge_session import EdgeVoice
+from .own_voice import Store
 from .pocket import PocketVoice
 
 BACKUP_AFTER_S = 3.0           # the worst local clause is 1.7 s, and one may wait behind another
@@ -32,7 +33,7 @@ class WithBackup:
 
     @property
     def warning(self) -> str:
-        return " │ VOZ DE RESPALDO" if self.down else ""
+        return " │ VOZ DE RESPALDO" if self.down else self.primary.warning
 
     async def start(self) -> None:
         await self.backup.start()
@@ -56,9 +57,20 @@ class WithBackup:
                             lambda: self.backup.say(text, rate_pct=rate_pct), BACKUP_AFTER_S, on_hedge)
 
 
-def make_voice(s: Settings, out_rate: int, *, size: int, emit: Callable[..., None] | None = None):
+def local_voice(voice) -> PocketVoice | None:
+    """The one that can take a clone, once it loaded."""
+    local = voice.primary if isinstance(voice, WithBackup) else voice
+    return local if isinstance(local, PocketVoice) and local.tts is not None else None
+
+
+def make_voice(s: Settings, out_rate: int, *, size: int, emit: Callable[..., None] | None = None,
+               store: Store | None = None):
     edge = EdgeVoice(s.tts_voice, out_rate, size=size, emit=emit)
     if s.tts_engine == "edge":
         return edge
-    pocket = PocketVoice(s.pocket_model, s.pocket_voice, out_rate, gain_db=s.pocket_gain_db)
+    store = store or Store()
+    saved = store.read(s.pocket_model)
+    own = saved is not None and saved.active
+    pocket = PocketVoice(s.pocket_model, str(store.state) if own else s.pocket_voice, out_rate, gain_db=s.pocket_gain_db,
+                         pace=saved.pace if own else None, own=own)
     return WithBackup(pocket, edge, emit=emit) if s.tts_backup == "edge" else pocket

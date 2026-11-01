@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import threading
+from pathlib import Path
 from typing import Callable
 
 import numpy as np
@@ -44,30 +45,47 @@ def load_model(model: str, voice: str, threads: int):
     return tts, tts.get_state_for_audio_prompt(voice)
 
 
+def export_state(state, path: Path) -> None:
+    from pocket_tts import export_model_state
+
+    export_model_state(state, path)
+
+
 def max_audio_s(text: str) -> float:
     return (MAX_S_PER_CHAR * len(text) + MAX_S_PER_CLAUSE) * MAX_OVER
 
 
 class PocketVoice:
     reconnects = 0
-    warning = ""
 
     def __init__(self, model: str, voice: str, out_rate: int, *, gain_db: float = 0.0, threads: int = THREADS,
-                 load: Callable = load_model) -> None:
+                 load: Callable = load_model, export: Callable = export_state,
+                 pace: tuple[float, float] | None = None, own: bool = False) -> None:
         self.model = model
         self.voice = voice
         self.out_rate = out_rate
         self.gain = 10 ** (gain_db / 20)
         self.threads = threads
         self.load = load
+        self.export = export
         self.tts = None
         self.state = None
-        self.pace = PACE.get((model, voice), (S_PER_CHAR, S_PER_CLAUSE))
+        self.own = own                               # the person's clone: the notice has to say so
+        self.pace = pace or PACE.get((model, voice), (S_PER_CHAR, S_PER_CLAUSE))
         self._one_at_a_time = threading.Lock()
 
     @property
     def name(self) -> str:
-        return f"pocket:{self.model}:{self.voice}"
+        return f"pocket:{self.model}:{Path(self.voice).stem}"
+
+    @property
+    def warning(self) -> str:
+        return " │ TU VOZ" if self.own else ""
+
+    @property
+    def can_clone(self) -> bool:
+        """False on the free weights, which is what a machine that never accepted the terms loads."""
+        return getattr(self.tts, "has_voice_cloning", False)
 
     async def start(self) -> None:
         """Loading takes 15 s and the first clause is slower than the rest, so a short one goes first."""
@@ -76,6 +94,21 @@ class PocketVoice:
 
     async def close(self) -> None:
         pass
+
+    def _prompt(self, audio: str | Path) -> object:
+        with self._one_at_a_time:
+            return self.tts.get_state_for_audio_prompt(audio, truncate=True)
+
+    async def clone(self, sample: Path, path: Path) -> None:
+        """Speaks with the voice of `sample` from here on, and leaves the state in `path` for the next run."""
+        state = await asyncio.to_thread(self._prompt, sample)
+        await asyncio.to_thread(self.export, state, path)
+        self.state = state
+
+    async def switch(self, voice: str, *, pace: tuple[float, float] | None = None, own: bool = False) -> None:
+        self.state = await asyncio.to_thread(self._prompt, voice)
+        self.voice, self.own = voice, own
+        self.pace = pace or PACE.get((self.model, voice), (S_PER_CHAR, S_PER_CLAUSE))
 
     def rate_for(self, text: str, src_s: float | None) -> int:
         return isochrony_pct(text, src_s, *self.pace)

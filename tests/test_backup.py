@@ -13,6 +13,7 @@ from interprete.tts.pocket import PocketVoice
 class FakeVoice:
     name = "fake"
     reconnects = 3
+    warning = ""
 
     def __init__(self, answer, *, wait=0.0, fails=False, load_fails=False):
         self.answer = answer
