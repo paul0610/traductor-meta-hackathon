@@ -23,6 +23,7 @@ Work in progress during the hackathon week. Daily logs with measured numbers liv
 | Turns: their sustained speech takes the floor from my voice | done, measured with both fixtures talking over each other |
 | Context: the whole conversation and a glossary reach Spark | done, measured on latency and on ambiguous clauses |
 | One-button widget and draggable metrics line | done, used with a real mouse and real keys on the real windows; F7 and F10 not pressed, not yet used in a call |
+| Your own voice: an optional clone made in the widget, on this PC | done, approved by ear; a real call still to do |
 
 ## How it works (short)
 
@@ -59,7 +60,11 @@ Before a call, `uv run python scripts/warmcheck.py` tests everything a call need
 
 **The button.** Top right; drag it anywhere and it stays there next time. `CARGANDO`, then `LISTO`: nothing is captured until you click it. `CONECTANDO` lasts until the ASR and the camera are up, and the last 3 s of what you say meanwhile are kept. Then `EN VIVO`: the ring is the health of the sync (of the lag with no dub) and the number is the lag in seconds. `PAUSADO`: they took the floor. `MUDO`: F8. `VOZ CRUDA`: F9. A left click stops it once it runs, a right click from any state, loading included. It ends on `APAGADO`, and if the microphone could not be restored it says so.
 
-**The metrics line.** `LAG │ SYNC │ CORR │ TURNO │ ES→EN │ META`. What is down shows there and stays: `ASR CAÍDO`, `SUBTÍTULOS CAÍDOS`, `SIN CÁMARA RETRASADA`, `VOZ DE RESPALDO`, `SIN MÉTRICAS`, or the task that died. `META` counts from the click, not from loading.
+**The metrics line.** `LAG │ SYNC │ CORR │ TURNO │ ES→EN │ META`. What is down shows there and stays: `ASR CAÍDO`, `SUBTÍTULOS CAÍDOS`, `SIN CÁMARA RETRASADA`, `VOZ DE RESPALDO`, `SIN MÉTRICAS`, or the task that died. `META` counts from the click, not from loading. `TU VOZ` means your clone is speaking.
+
+**Your own voice (optional).** In `LISTO` a card offers to clone your voice. You read half a minute of English, the clone is made on this PC, and you hear your recording next to it before deciding. Say no and the standard voice speaks. The text opens with your consent, so clone only your own voice. The recording and the clone stay in `logs/voice`, which git ignores, and nothing is uploaded. `Borrar mi voz` deletes them. With a clone on, pressing the button plays the notice by itself, and the notice says the voice is a synthetic copy, because the other side would otherwise take it for you.
+
+Making a clone needs Pocket's gated weights: accept the terms at [huggingface.co/kyutai/pocket-tts](https://huggingface.co/kyutai/pocket-tts), sign in with `uvx hf auth login` and reopen the app. Access is approved automatically. Without it the card says so and nothing else changes. Using a clone already made does not need it.
 
 To check it without speaking: `uv run python scripts/make_fixtures.py`, then `uv run python scripts/gate_60s.py` runs both chains on synthetic voices and judges the run from its log. `uv run python scripts/gate_sync.py` does the same for the dub, and also compares each clause's timing against the real word times of the fixture. With `--voice` it runs on your own voice and camera for 60 s, checks where each turn opens against the microphone, and leaves in `logs/` a 20 s clip of what the other side gets.
 
@@ -86,7 +91,7 @@ Every run writes one JSONL line per event to `logs/` (fields in SPEC §4). Numbe
 
 ## Credits
 
-The local voice is [Pocket TTS](https://huggingface.co/kyutai/pocket-tts) by Kyutai, CC BY 4.0. The default voice, `michael`, comes from the VCTK corpus, CC BY 4.0. Both download on first use. Some Pocket voices come from non-commercial sets, listed in [kyutai/tts-voices](https://huggingface.co/kyutai/tts-voices).
+The local voice is [Pocket TTS](https://huggingface.co/kyutai/pocket-tts) by Kyutai, CC BY 4.0. The default voice, `michael`, comes from the VCTK corpus, CC BY 4.0. Both download on first use. Some Pocket voices come from non-commercial sets, listed in [kyutai/tts-voices](https://huggingface.co/kyutai/tts-voices). Pocket's terms bar cloning a voice without consent and passing generated audio as a real recording.
 
 ## License
 

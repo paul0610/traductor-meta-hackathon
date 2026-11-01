@@ -245,3 +245,15 @@ The delay line (`audio/delay.py`) is written by the mic callback and read by the
 - **No speed control:** `rate_pct` becomes a WSOLA stretch in `tts/stretch.py`. About a third of the clauses use it. Length is predicted per voice: `michael` 0.0382 s per character plus 0.35 s.
 - **Loading takes about 15 s,** 42 s on the first run after an install, so it happens before the audio starts: a call must not change voice halfway. If it fails, Edge speaks every clause and the bar says `VOZ DE RESPALDO`.
 - **Licenses:** model CC BY 4.0, `michael` and `george` from VCTK, CC BY 4.0. Voices from `ears` and `expresso`, such as `jean`, `cosette`, are non-commercial and must not be used.
+
+### 10.1 Your own voice *[measured 2026-11-01 on this PC]*
+
+Mechanism taken from how zero-shot voice cloning works, not from any other project's code: `tts/own_voice.py` is written on Pocket's own `get_state_for_audio_prompt` and `export_model_state`. It is offered in `LISTO` only and is optional: nothing changes for someone who says no.
+
+- **A clone costs what a catalog voice costs.** First audio 0.15 s and 2.3 to 2.4 times real time with clips of 8, 12, 15, 20 and 26 s, the same as `michael` on the same sentences. The state grows from 4.5 to 15 MB and reads in 2 ms; cloning takes 1 to 4 s, once.
+- **Only making a clone needs the gated weights.** `kyutai/pocket-tts` is gated, approved automatically. Without access Pocket falls back on `pocket-tts-without-voice-cloning` with no error, so `has_voice_cloning` is what tells. An exported state ran on those free weights at the same speed, with clauses of normal length; that audio has not been judged by ear. A state only fits the model that made it, so `Store` keeps the model's name.
+- **A clone speaks at the pace of its clip.** Paul reading English: 40 characters in 2.47 s against 1.88 s for `michael`, and 17 of 38 real clauses at the +25 % cap against 5. A faster clip makes a faster clone: ×1.15 gives 2.18 s, ×1.30 gives 1.94 s, ×1.45 gives 1.91 s. So a clip slower than 1.9 s per 40 characters is sped up by WSOLA and cloned again, up to ×1.3. Stretching the clip once replaces stretching every clause.
+- **Pace is measured per clone** on ten clauses and saved with it; without it isochrony would use Edge's numbers. Two fits of the same voice split the time differently between characters and clause (0.0509 + 0.42 and 0.0447 + 0.68) and agree on the total, 2.45 and 2.47 s for 40 characters, so the total is what to trust.
+- **The notice is not optional with a clone.** Pocket's terms bar passing generated audio as a real recording, and a clone sounds like the person. Pressing the button plays the notice by itself and it says the voice is a synthetic copy. Runs with `--no-overlay` skip it: those are gates, and no one is listening.
+- **Consent is in the recording.** The text opens with it, and `Store` keeps the text and the date. Sample, state and pace live in `logs/voice`, which git ignores; a take not approved does not stay on disk.
+- **Edge stays as the backup:** a clause Pocket fails or holds 3 s comes out in Edge's voice, not the clone's.
