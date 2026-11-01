@@ -62,6 +62,7 @@ def _letters(m: re.Match) -> str:
 
 def spoken(text: str) -> str:
     """Digits, symbols, accents and acronyms in words. Empty if nothing in it can be said."""
+    text = text.replace("ñ", "ny").replace("Ñ", "Ny")
     text = "".join(c for c in unicodedata.normalize("NFKD", text) if not unicodedata.combining(c))
     text = re.sub(rf"(\$|€|£|S/)\s?\.?\s?({NUMBER}){SCALE}", _money, text)
     text = re.sub(rf"({NUMBER})\s?%", lambda m: f"{_words(_value(m[1]))} percent", text)

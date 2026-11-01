@@ -63,7 +63,7 @@ def test_a_clause_comes_out_at_the_cable_rate_without_its_silence():
 def test_what_it_cannot_say_is_written_out_first():
     model = FakeModel()
     asyncio.run(voice(model).say("We grew 40% with Núñez"))
-    assert model.calls[-1][0] == "We grew forty percent with Nunez"
+    assert model.calls[-1][0] == "We grew forty percent with Nunyez"
 
 
 def test_rate_pct_shortens_the_clause_and_the_base_rate_goes_to_the_model():

@@ -26,7 +26,8 @@ def test_numbers_are_written_out(text, said):
 
 
 @pytest.mark.parametrize("text, said", [
-    ("Núñez y José", "Nunez y Jose"),
+    ("Núñez y José", "Nunyez y Jose"),
+    ("Peña y Güe", "Penya y Gue"),
     ("AI & ML", "ay eye and em ell"),
     ("two APIs", "two ay pee eyes"),
     ("OK then", "okay then"),
