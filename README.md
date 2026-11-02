@@ -23,7 +23,7 @@ Work in progress during the hackathon week. Daily logs with measured numbers liv
 | Turns: their sustained speech takes the floor from my voice | done, measured with both fixtures talking over each other |
 | Context: the whole conversation and a glossary reach Spark | done, measured on latency and on ambiguous clauses |
 | One-button widget and draggable metrics line | done, used with a real mouse and real keys on the real windows; F7 and F10 not pressed, not yet used in a call |
-| Meta end to end: MMS-TTS on this PC is the voice | done, gates passed on synthetic voices; by ear and in a real call still to do |
+| Meta end to end: MMS-TTS on this PC is the voice | done, judged by ear and measured with a real voice; a real call still to do |
 
 ## How it works (short)
 
@@ -76,7 +76,7 @@ Before a call, `uv run python scripts/warmcheck.py` tests everything a call need
 
 **Sounds.** A short cue when the button changes state, so you do not have to look at it: ready, live, muted and back, raw voice, they took the floor, stopping. They play on your headphones and never reach the cable. `RTT_SOUNDS=0` turns them off.
 
-**The voice.** MMS-TTS only knows letters, apostrophes and hyphens: it loses digits, symbols, accents and punctuation in silence. Spark is asked to write numbers in words, and `tts/spoken.py` catches what gets through, so "$120" and "Núñez" are still said. `RTT_MMS_SPEAKING_RATE` sets the pace: lower is calmer, and the English then outlasts the Spanish it translates.
+**The voice.** MMS-TTS only knows letters, apostrophes and hyphens: it loses digits, symbols, accents and punctuation in silence. Spark is asked to write numbers in words, and `tts/spoken.py` catches what gets through, so "$120" and "Núñez" are still said. `RTT_MMS_SPEAKING_RATE` sets the pace: lower is calmer, and the English then outlasts the Spanish it translates. A clause longer than its Spanish is sped up by 12 % at most: at 25 % it could no longer be understood, and few clauses need it.
 
 To check it without speaking: `uv run python scripts/make_fixtures.py`, then `uv run python scripts/gate_60s.py` runs both chains on synthetic voices and judges the run from its log. `uv run python scripts/gate_sync.py` does the same for the dub, and also compares each clause's timing against the real word times of the fixture. With `--voice` it runs on your own voice and camera for 60 s, checks where each turn opens against the microphone, and leaves in `logs/` a 20 s clip of what the other side gets.
 
@@ -96,16 +96,17 @@ Dependencies are pinned exactly and locked (`uv.lock`), resolved with a supply-c
 
 Every run writes one JSONL line per event to `logs/` (fields in SPEC §4). Numbers are reported per day in `docs/log/`.
 
-Gates on synthetic voices, this PC, default settings, Nov 1. A real voice and a real call are still to come here.
+Gates on this PC, default settings, Nov 1, on synthetic voices unless it says otherwise. A real call is still to come here.
 
 | Gate | Result |
 |---|---|
 | 0: Spanish in, English on the cable | 32 of 32 clauses played, 100 % of the bytes, 0 gaps |
-| 60 s, both directions | passes; commit to first PCM p50 1.72 s, p95 3.04 s |
-| S: dub, D 7.0 s, p95 of sync error at most 0.5 s | passes 4 of 5 runs, 0.23 to 0.38 s; the fifth missed at 0.525 s. None over 1 s late, none early in any run |
+| 60 s, both directions | commit to first PCM p50 2.04 s, p95 3.20 s, 0 gaps; one clause lost, see below |
+| S: dub, D 7.0 s, p95 of sync error at most 0.5 s | 0.25 to 0.39 s in 3 runs, none over 1 s late, none early; one run lost a clause, see below |
+| S with my own voice, 60 s | passes: 0.147 s, 30 of 30 clauses played. Against the lips where a phrase opens: p95 0.80 s; 5 of 25 over 0.5 s, 1 over 1 s |
 | MMS-TTS, whole clause ready | p50 0.60 s, p95 0.83 s, 164 clauses, 4 threads |
 
-When a clause is late it is because the English before it ran long, not because the voice or Spark were slow: late clauses were ready 1.5 s or more before their turn.
+Known limits. When a clause is late it is because the English before it ran long, not because the voice or Spark were slow: late clauses were ready 1.4 s or more before their turn. A last word the clause before already translated can hold Spark past its limit; the listener misses nothing, but the gates count that clause as lost. Telling Spark it may answer nothing was worse: p95 went from 1.60 to 2.40 s and it dropped real clauses.
 
 Reproduce them with `scripts/make_fixtures.py`, then `scripts/gate_60s.py` and `scripts/gate_sync.py`.
 
@@ -117,8 +118,6 @@ Reproduce them with `scripts/make_fixtures.py`, then `scripts/gate_60s.py` and `
 ## Third-party models and licenses
 
 The voice is [MMS-TTS](https://huggingface.co/facebook/mms-tts-eng) by Meta, CC BY-NC 4.0, downloaded on first use.
-
-The hackathon build uses only Meta models at runtime (table above). Non-Meta engines remain in the source as an uninstalled optional extra for a future commercial version and are not used, installed or demonstrated here. `tests/test_mms.py` checks in a clean process that a default run does not load them, and [`docs/SPEC.md`](docs/SPEC.md) §9 and §10 describe them.
 
 ## License
 
