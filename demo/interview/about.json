@@ -1,0 +1,41 @@
+{
+  "recorded": "2026-11-02T08:12:47.317",
+  "commit": "c52a6f5",
+  "delay_s": 0.0,
+  "mode": "incremental",
+  "voice": "mms:mms-tts-eng",
+  "audio": {
+    "out.wav": "the Spanish that went in for the microphone",
+    "in.wav": "the other side, in English"
+  },
+  "measured": {
+    "out": {
+      "commits": 18,
+      "played": 18,
+      "yields": 0,
+      "cable_gaps": 0,
+      "commit_to_first_pcm_s": {
+        "n": 18,
+        "mean": 2.177,
+        "p50": 2.319,
+        "p95": 2.999
+      },
+      "speech_end_to_first_pcm_s": {
+        "n": 18,
+        "mean": 3.31,
+        "p50": 3.356,
+        "p95": 4.407
+      }
+    },
+    "in": {
+      "commits": 9,
+      "subtitles": 9,
+      "speech_end_to_subtitle_s": {
+        "n": 9,
+        "mean": 2.79,
+        "p50": 2.903,
+        "p95": 4.107
+      }
+    }
+  }
+}

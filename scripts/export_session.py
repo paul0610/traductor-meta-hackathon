@@ -36,7 +36,8 @@ def main() -> None:
     commit = subprocess.run(["git", "rev-parse", "--short", "HEAD"], capture_output=True, text=True).stdout.strip()
 
     events = read(args.log)
-    t0 = min(e["t"] for e in events)
+    # zero is where the audio starts, not where the app started: its voice took half a minute to load before that
+    t0 = min(e["t_start"] for e in events if e["ev"] == "state" and e.get("what") in ("fixture_start", "fixture_start_in"))
     ids: dict[str, str] = {}
 
     def short(uid: str) -> str:

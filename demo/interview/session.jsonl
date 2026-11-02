@@ -1,0 +1,161 @@
+{"ev": "state", "what": "fixture_start", "t_start": 0.0}
+{"ev": "state", "what": "fixture_start_in", "t_start": 0.0}
+{"ev": "asr", "channel": "in", "kind": "partial", "t_recv": 2.561, "text": "Thanks"}
+{"ev": "asr", "channel": "in", "kind": "partial", "t_recv": 2.8137, "text": "Thanks for"}
+{"ev": "asr", "channel": "in", "kind": "partial", "t_recv": 3.618, "text": "Thanks for joining us"}
+{"ev": "asr", "channel": "in", "kind": "partial", "t_recv": 4.2291, "text": "Thanks for joining us today."}
+{"ev": "commit", "channel": "in", "seq": 0, "commit_id": 0, "utterance_id": "in:0", "text_src": "Thanks for joining us today.", "t_commit": 4.8896, "t_src_start": 1.28, "t_src_end": 3.684}
+{"ev": "asr", "channel": "in", "kind": "partial", "t_recv": 5.1698, "text": "Thanks for joining us today. Could you tell"}
+{"ev": "asr", "channel": "in", "kind": "partial", "t_recv": 5.4403, "text": "Thanks for joining us today. Could you tell me"}
+{"ev": "asr", "channel": "in", "kind": "partial", "t_recv": 5.6155, "text": "Thanks for joining us today. Could you tell me a little"}
+{"ev": "commit", "channel": "in", "seq": 1, "commit_id": 1, "utterance_id": "in:0", "text_src": "Could you tell me", "t_commit": 6.3556, "t_src_start": 3.6929, "t_src_end": 5.0943}
+{"ev": "asr", "channel": "in", "kind": "partial", "t_recv": 6.3561, "text": "Thanks for joining us today. Could you tell me a little about"}
+{"ev": "asr", "channel": "in", "kind": "partial", "t_recv": 6.6065, "text": "Thanks for joining us today. Could you tell me a little about yourself?"}
+{"ev": "commit", "channel": "in", "seq": 2, "commit_id": 2, "utterance_id": "in:0", "text_src": "a little about yourself?", "t_commit": 6.6066, "t_src_start": 4.8215, "t_src_end": 5.8029}
+{"ev": "asr", "channel": "in", "kind": "speechComplete", "t_recv": 6.6074, "text": "Thanks for joining us today. Could you tell me a little about yourself?"}
+{"ev": "mt", "channel": "in", "seq": 0, "t": 6.7609, "t_mt": 6.7607, "text_tgt": "Gracias por acompañarnos hoy."}
+{"ev": "mt", "channel": "in", "seq": 1, "t": 8.4267, "t_mt": 8.4266, "text_tgt": "¿Podría decirme"}
+{"ev": "asr", "channel": "out", "kind": "partial", "t_recv": 8.9098, "text": "Buenos"}
+{"ev": "asr", "channel": "out", "kind": "partial", "t_recv": 9.26, "text": "Buenos días."}
+{"ev": "asr", "channel": "out", "kind": "partial", "t_recv": 10.0916, "text": "Buenos días. Gracias"}
+{"ev": "mt", "channel": "in", "seq": 2, "t": 10.4259, "t_mt": 10.4258, "text_tgt": "un poco sobre usted?"}
+{"ev": "asr", "channel": "out", "kind": "partial", "t_recv": 10.4693, "text": "Buenos días. Gracias por"}
+{"ev": "commit", "channel": "out", "seq": 0, "commit_id": 0, "utterance_id": "out:1", "text_src": "Buenos días. Gracias", "t_commit": 11.2261, "t_src_start": 7.68, "t_src_end": 9.7267}
+{"ev": "asr", "channel": "out", "kind": "partial", "t_recv": 11.2265, "text": "Buenos días. Gracias por recibirme."}
+{"ev": "asr", "channel": "out", "kind": "partial", "t_recv": 11.601, "text": "Buenos días. Gracias por recibirme. Tengo"}
+{"ev": "asr", "channel": "out", "kind": "partial", "t_recv": 12.1492, "text": "Buenos días. Gracias por recibirme. Tengo cinco"}
+{"ev": "commit", "channel": "out", "seq": 1, "commit_id": 1, "utterance_id": "out:1", "text_src": "por recibirme. Tengo", "t_commit": 12.1492, "t_src_start": 9.02, "t_src_end": 11.38}
+{"ev": "asr", "channel": "out", "kind": "partial", "t_recv": 12.3444, "text": "Buenos días. Gracias por recibirme. Tengo cinco años"}
+{"ev": "mt", "channel": "out", "seq": 0, "t": 12.4163, "t_mt": 12.4162, "text_tgt": "Good morning. Thank you"}
+{"ev": "asr", "channel": "out", "kind": "partial", "t_recv": 12.55, "text": "Buenos días. Gracias por recibirme. Tengo cinco años de"}
+{"ev": "asr", "channel": "out", "kind": "partial", "t_recv": 12.9591, "text": "Buenos días. Gracias por recibirme. Tengo cinco años de experiencia"}
+{"ev": "mt", "channel": "out", "seq": 1, "t": 13.4387, "t_mt": 13.4386, "text_tgt": "for having me. I have"}
+{"ev": "commit", "channel": "out", "seq": 2, "commit_id": 2, "utterance_id": "out:1", "text_src": "cinco años de experiencia", "t_commit": 13.6941, "t_src_start": 10.8, "t_src_end": 12.5914}
+{"ev": "asr", "channel": "out", "kind": "partial", "t_recv": 13.9651, "text": "Buenos días. Gracias por recibirme. Tengo cinco años de experiencia construyendo"}
+{"ev": "asr", "channel": "out", "kind": "partial", "t_recv": 14.3463, "text": "Buenos días. Gracias por recibirme. Tengo cinco años de experiencia construyendo sistemas"}
+{"ev": "asr", "channel": "out", "kind": "partial", "t_recv": 14.7462, "text": "Buenos días. Gracias por recibirme. Tengo cinco años de experiencia construyendo sistemas de"}
+{"ev": "mt", "channel": "out", "seq": 2, "t": 14.878, "t_mt": 14.8779, "text_tgt": "five years of experience"}
+{"ev": "asr", "channel": "out", "kind": "partial", "t_recv": 15.077, "text": "Buenos días. Gracias por recibirme. Tengo cinco años de experiencia construyendo sistemas de datos"}
+{"ev": "asr", "channel": "out", "kind": "partial", "t_recv": 15.3638, "text": "Buenos días. Gracias por recibirme. Tengo cinco años de experiencia construyendo sistemas de datos para"}
+{"ev": "asr", "channel": "out", "kind": "partial", "t_recv": 15.6159, "text": "Buenos días. Gracias por recibirme. Tengo cinco años de experiencia construyendo sistemas de datos para empresas"}
+{"ev": "commit", "channel": "out", "seq": 3, "commit_id": 3, "utterance_id": "out:1", "text_src": "construyendo sistemas de datos", "t_commit": 15.6159, "t_src_start": 12.8782, "t_src_end": 14.8086}
+{"ev": "asr", "channel": "out", "kind": "partial", "t_recv": 16.1603, "text": "Buenos días. Gracias por recibirme. Tengo cinco años de experiencia construyendo sistemas de datos para empresas medianas"}
+{"ev": "mt", "channel": "out", "seq": 3, "t": 16.4348, "t_mt": 16.4347, "text_tgt": "building data systems"}
+{"ev": "asr", "channel": "out", "kind": "partial", "t_recv": 16.6342, "text": "Buenos días. Gracias por recibirme. Tengo cinco años de experiencia construyendo sistemas de datos para empresas medianas y"}
+{"ev": "asr", "channel": "out", "kind": "partial", "t_recv": 16.7614, "text": "Buenos días. Gracias por recibirme. Tengo cinco años de experiencia construyendo sistemas de datos para empresas medianas y en mi"}
+{"ev": "commit", "channel": "out", "seq": 4, "commit_id": 4, "utterance_id": "out:1", "text_src": "para empresas medianas", "t_commit": 16.7614, "t_src_start": 14.5196, "t_src_end": 15.5743}
+{"ev": "asr", "channel": "out", "kind": "partial", "t_recv": 17.19, "text": "Buenos días. Gracias por recibirme. Tengo cinco años de experiencia construyendo sistemas de datos para empresas medianas y en mi último"}
+{"ev": "asr", "channel": "out", "kind": "partial", "t_recv": 17.5602, "text": "Buenos días. Gracias por recibirme. Tengo cinco años de experiencia construyendo sistemas de datos para empresas medianas y en mi último trabajo"}
+{"ev": "mt", "channel": "out", "seq": 4, "t": 17.604, "t_mt": 17.6032, "text_tgt": "for medium-sized companies"}
+{"ev": "asr", "channel": "out", "kind": "partial", "t_recv": 18.099, "text": "Buenos días. Gracias por recibirme. Tengo cinco años de experiencia construyendo sistemas de datos para empresas medianas y en mi último trabajo reduje"}
+{"ev": "commit", "channel": "out", "seq": 5, "commit_id": 5, "utterance_id": "out:1", "text_src": "y en mi último trabajo reduje", "t_commit": 18.7843, "t_src_start": 15.86, "t_src_end": 17.2886}
+{"ev": "asr", "channel": "out", "kind": "partial", "t_recv": 18.7848, "text": "Buenos días. Gracias por recibirme. Tengo cinco años de experiencia construyendo sistemas de datos para empresas medianas y en mi último trabajo reduje el"}
+{"ev": "asr", "channel": "out", "kind": "partial", "t_recv": 19.3237, "text": "Buenos días. Gracias por recibirme. Tengo cinco años de experiencia construyendo sistemas de datos para empresas medianas y en mi último trabajo reduje el tiempo de"}
+{"ev": "asr", "channel": "out", "kind": "partial", "t_recv": 19.676, "text": "Buenos días. Gracias por recibirme. Tengo cinco años de experiencia construyendo sistemas de datos para empresas medianas y en mi último trabajo reduje el tiempo de los"}
+{"ev": "mt", "channel": "out", "seq": 5, "t": 20.3561, "t_mt": 20.356, "text_tgt": "and in my last job I reduced"}
+{"ev": "commit", "channel": "out", "seq": 6, "commit_id": 6, "utterance_id": "out:1", "text_src": "el tiempo de los", "t_commit": 20.4681, "t_src_start": 17.7087, "t_src_end": 19.4257}
+{"ev": "asr", "channel": "out", "kind": "partial", "t_recv": 20.4686, "text": "Buenos días. Gracias por recibirme. Tengo cinco años de experiencia construyendo sistemas de datos para empresas medianas y en mi último trabajo reduje el tiempo de los reportes de dos"}
+{"ev": "asr", "channel": "out", "kind": "partial", "t_recv": 20.8269, "text": "Buenos días. Gracias por recibirme. Tengo cinco años de experiencia construyendo sistemas de datos para empresas medianas y en mi último trabajo reduje el tiempo de los reportes de dos días"}
+{"ev": "asr", "channel": "out", "kind": "partial", "t_recv": 20.9575, "text": "Buenos días. Gracias por recibirme. Tengo cinco años de experiencia construyendo sistemas de datos para empresas medianas y en mi último trabajo reduje el tiempo de los reportes de dos días a"}
+{"ev": "asr", "channel": "out", "kind": "partial", "t_recv": 21.5487, "text": "Buenos días. Gracias por recibirme. Tengo cinco años de experiencia construyendo sistemas de datos para empresas medianas y en mi último trabajo reduje el tiempo de los reportes de dos días a veinte"}
+{"ev": "asr", "channel": "out", "kind": "partial", "t_recv": 21.7005, "text": "Buenos días. Gracias por recibirme. Tengo cinco años de experiencia construyendo sistemas de datos para empresas medianas y en mi último trabajo reduje el tiempo de los reportes de dos días a veinte minutos."}
+{"ev": "commit", "channel": "out", "seq": 7, "commit_id": 7, "utterance_id": "out:1", "text_src": "reportes de dos días a veinte minutos.", "t_commit": 22.0822, "t_src_start": 19.0477, "t_src_end": 20.9686}
+{"ev": "asr", "channel": "out", "kind": "speechComplete", "t_recv": 22.0827, "text": "Buenos días. Gracias por recibirme. Tengo cinco años de experiencia construyendo sistemas de datos para empresas medianas y en mi último trabajo reduje el tiempo de los reportes de dos días a veinte minutos."}
+{"ev": "mt", "channel": "out", "seq": 6, "t": 22.7187, "t_mt": 22.7186, "text_tgt": "the time of the"}
+{"ev": "mt", "channel": "out", "seq": 7, "t": 23.5907, "t_mt": 23.5906, "text_tgt": "reporting time from two days to twenty minutes."}
+{"ev": "asr", "channel": "in", "kind": "partial", "t_recv": 28.5581, "text": "That's"}
+{"ev": "asr", "channel": "in", "kind": "partial", "t_recv": 29.646, "text": "That's impressive."}
+{"ev": "asr", "channel": "in", "kind": "partial", "t_recv": 30.1627, "text": "That's impressive. What"}
+{"ev": "asr", "channel": "in", "kind": "partial", "t_recv": 30.4015, "text": "That's impressive. What was"}
+{"ev": "commit", "channel": "in", "seq": 3, "commit_id": 0, "utterance_id": "in:2", "text_src": "That's impressive. What", "t_commit": 30.4015, "t_src_start": 27.84, "t_src_end": 30.18}
+{"ev": "asr", "channel": "in", "kind": "partial", "t_recv": 30.7505, "text": "That's impressive. What was the"}
+{"ev": "asr", "channel": "in", "kind": "partial", "t_recv": 31.0441, "text": "That's impressive. What was the hardest"}
+{"ev": "asr", "channel": "in", "kind": "partial", "t_recv": 31.1277, "text": "That's impressive. What was the hardest part"}
+{"ev": "asr", "channel": "in", "kind": "partial", "t_recv": 31.2092, "text": "That's impressive. What was the hardest part of"}
+{"ev": "asr", "channel": "in", "kind": "partial", "t_recv": 31.4371, "text": "That's impressive. What was the hardest part of that"}
+{"ev": "mt", "channel": "in", "seq": 3, "t": 31.8691, "t_mt": 31.869, "text_tgt": "Eso es impresionante. Qué"}
+{"ev": "asr", "channel": "in", "kind": "partial", "t_recv": 32.0986, "text": "That's impressive. What was the hardest part of that project?"}
+{"ev": "commit", "channel": "in", "seq": 4, "commit_id": 1, "utterance_id": "in:2", "text_src": "was the hardest part of", "t_commit": 32.0986, "t_src_start": 29.3172, "t_src_end": 30.7972}
+{"ev": "commit", "channel": "in", "seq": 5, "commit_id": 2, "utterance_id": "in:2", "text_src": "that project?", "t_commit": 32.0991, "t_src_start": 30.76, "t_src_end": 31.2315}
+{"ev": "asr", "channel": "in", "kind": "speechComplete", "t_recv": 32.0994, "text": "That's impressive. What was the hardest part of that project?"}
+{"ev": "mt", "channel": "in", "seq": 4, "t": 32.8327, "t_mt": 32.8326, "text_tgt": "fue la parte más difícil de"}
+{"ev": "mt", "channel": "in", "seq": 5, "t": 33.5132, "t_mt": 33.5131, "text_tgt": "ese proyecto?"}
+{"ev": "asr", "channel": "out", "kind": "partial", "t_recv": 34.1638, "text": "Lo"}
+{"ev": "asr", "channel": "out", "kind": "partial", "t_recv": 34.3479, "text": "Lo más"}
+{"ev": "asr", "channel": "out", "kind": "partial", "t_recv": 34.8219, "text": "Lo más difícil"}
+{"ev": "asr", "channel": "out", "kind": "partial", "t_recv": 35.0447, "text": "Lo más difícil no fue"}
+{"ev": "asr", "channel": "out", "kind": "partial", "t_recv": 35.2874, "text": "Lo más difícil no fue la"}
+{"ev": "asr", "channel": "out", "kind": "partial", "t_recv": 35.6111, "text": "Lo más difícil no fue la parte"}
+{"ev": "commit", "channel": "out", "seq": 8, "commit_id": 0, "utterance_id": "out:3", "text_src": "Lo más difícil no fue la parte", "t_commit": 36.2996, "t_src_start": 33.28, "t_src_end": 34.9571}
+{"ev": "asr", "channel": "out", "kind": "partial", "t_recv": 36.7249, "text": "Lo más difícil no fue la parte técnica,"}
+{"ev": "asr", "channel": "out", "kind": "partial", "t_recv": 37.3129, "text": "Lo más difícil no fue la parte técnica, sino"}
+{"ev": "mt", "channel": "out", "seq": 8, "t": 38.0414, "t_mt": 38.0412, "text_tgt": "The hardest part wasn't the"}
+{"ev": "asr", "channel": "out", "kind": "partial", "t_recv": 38.2644, "text": "Lo más difícil no fue la parte técnica, sino coordinar a"}
+{"ev": "asr", "channel": "out", "kind": "partial", "t_recv": 38.3098, "text": "Lo más difícil no fue la parte técnica, sino coordinar a tres"}
+{"ev": "asr", "channel": "out", "kind": "partial", "t_recv": 38.7951, "text": "Lo más difícil no fue la parte técnica, sino coordinar a tres equipos"}
+{"ev": "commit", "channel": "out", "seq": 9, "commit_id": 1, "utterance_id": "out:3", "text_src": "técnica, sino coordinar", "t_commit": 38.7951, "t_src_start": 35.46, "t_src_end": 37.5286}
+{"ev": "asr", "channel": "out", "kind": "partial", "t_recv": 38.9672, "text": "Lo más difícil no fue la parte técnica, sino coordinar a tres equipos que"}
+{"ev": "asr", "channel": "out", "kind": "partial", "t_recv": 39.1496, "text": "Lo más difícil no fue la parte técnica, sino coordinar a tres equipos que nunca"}
+{"ev": "asr", "channel": "out", "kind": "partial", "t_recv": 39.544, "text": "Lo más difícil no fue la parte técnica, sino coordinar a tres equipos que nunca habían"}
+{"ev": "mt", "channel": "out", "seq": 9, "t": 40.2394, "t_mt": 40.2393, "text_tgt": "technical part, but coordinating"}
+{"ev": "commit", "channel": "out", "seq": 10, "commit_id": 2, "utterance_id": "out:3", "text_src": "a tres equipos", "t_commit": 40.2431, "t_src_start": 36.5, "t_src_end": 38.7057}
+{"ev": "asr", "channel": "out", "kind": "partial", "t_recv": 40.2436, "text": "Lo más difícil no fue la parte técnica, sino coordinar a tres equipos que nunca habían trabajado"}
+{"ev": "asr", "channel": "out", "kind": "partial", "t_recv": 40.886, "text": "Lo más difícil no fue la parte técnica, sino coordinar a tres equipos que nunca habían trabajado juntos."}
+{"ev": "commit", "channel": "out", "seq": 11, "commit_id": 3, "utterance_id": "out:3", "text_src": "que nunca habían trabajado", "t_commit": 40.886, "t_src_start": 38.1785, "t_src_end": 39.4143}
+{"ev": "mt", "channel": "out", "seq": 10, "t": 41.0503, "t_mt": 41.0502, "text_tgt": "three teams"}
+{"ev": "asr", "channel": "out", "kind": "partial", "t_recv": 41.5293, "text": "Lo más difícil no fue la parte técnica, sino coordinar a tres equipos que nunca habían trabajado juntos. Aprendí"}
+{"ev": "asr", "channel": "out", "kind": "partial", "t_recv": 41.6786, "text": "Lo más difícil no fue la parte técnica, sino coordinar a tres equipos que nunca habían trabajado juntos. Aprendí a"}
+{"ev": "mt", "channel": "out", "seq": 11, "t": 41.8163, "t_mt": 41.8162, "text_tgt": "who had never worked"}
+{"ev": "asr", "channel": "out", "kind": "partial", "t_recv": 42.3436, "text": "Lo más difícil no fue la parte técnica, sino coordinar a tres equipos que nunca habían trabajado juntos. Aprendí a escuchar"}
+{"ev": "commit", "channel": "out", "seq": 12, "commit_id": 4, "utterance_id": "out:3", "text_src": "juntos. Aprendí a escuchar", "t_commit": 43.0633, "t_src_start": 39.9575, "t_src_end": 42.0657}
+{"ev": "asr", "channel": "out", "kind": "partial", "t_recv": 43.0637, "text": "Lo más difícil no fue la parte técnica, sino coordinar a tres equipos que nunca habían trabajado juntos. Aprendí a escuchar primero y"}
+{"ev": "asr", "channel": "out", "kind": "partial", "t_recv": 43.694, "text": "Lo más difícil no fue la parte técnica, sino coordinar a tres equipos que nunca habían trabajado juntos. Aprendí a escuchar primero y después"}
+{"ev": "asr", "channel": "out", "kind": "partial", "t_recv": 44.2713, "text": "Lo más difícil no fue la parte técnica, sino coordinar a tres equipos que nunca habían trabajado juntos. Aprendí a escuchar primero y después proponer."}
+{"ev": "commit", "channel": "out", "seq": 13, "commit_id": 5, "utterance_id": "out:3", "text_src": "primero y después proponer.", "t_commit": 44.2716, "t_src_start": 42.02, "t_src_end": 43.7686}
+{"ev": "asr", "channel": "out", "kind": "speechComplete", "t_recv": 44.272, "text": "Lo más difícil no fue la parte técnica, sino coordinar a tres equipos que nunca habían trabajado juntos. Aprendí a escuchar primero y después proponer."}
+{"ev": "mt", "channel": "out", "seq": 12, "t": 44.3394, "t_mt": 44.3393, "text_tgt": "together. I learned to listen"}
+{"ev": "mt", "channel": "out", "seq": 13, "t": 45.5041, "t_mt": 45.504, "text_tgt": "first and then propose."}
+{"ev": "asr", "channel": "in", "kind": "partial", "t_recv": 51.2982, "text": "Great."}
+{"ev": "asr", "channel": "in", "kind": "partial", "t_recv": 51.6454, "text": "Great. Thank"}
+{"ev": "asr", "channel": "in", "kind": "partial", "t_recv": 51.7124, "text": "Great. Thank you"}
+{"ev": "commit", "channel": "in", "seq": 6, "commit_id": 0, "utterance_id": "in:4", "text_src": "Great. Thank you", "t_commit": 52.3955, "t_src_start": 50.08, "t_src_end": 51.06}
+{"ev": "asr", "channel": "in", "kind": "partial", "t_recv": 52.837, "text": "Great. Thank you do"}
+{"ev": "asr", "channel": "in", "kind": "partial", "t_recv": 52.9015, "text": "Great. Thank you do you"}
+{"ev": "asr", "channel": "in", "kind": "partial", "t_recv": 53.2137, "text": "Great. Thank you do you have any"}
+{"ev": "asr", "channel": "in", "kind": "partial", "t_recv": 53.8349, "text": "Great. Thank you do you have any questions"}
+{"ev": "mt", "channel": "in", "seq": 6, "t": 53.9635, "t_mt": 53.9634, "text_tgt": "Genial. Gracias"}
+{"ev": "asr", "channel": "in", "kind": "partial", "t_recv": 54.456, "text": "Great. Thank you do you have any questions for"}
+{"ev": "asr", "channel": "in", "kind": "partial", "t_recv": 54.5216, "text": "Great. Thank you do you have any questions for us?"}
+{"ev": "commit", "channel": "in", "seq": 7, "commit_id": 1, "utterance_id": "in:4", "text_src": "do you have any questions", "t_commit": 54.5216, "t_src_start": 51.5181, "t_src_end": 53.3343}
+{"ev": "commit", "channel": "in", "seq": 8, "commit_id": 2, "utterance_id": "in:4", "text_src": "for us?", "t_commit": 54.5223, "t_src_start": 53.3572, "t_src_end": 53.9286}
+{"ev": "asr", "channel": "in", "kind": "speechComplete", "t_recv": 54.5226, "text": "Great. Thank you do you have any questions for us?"}
+{"ev": "mt", "channel": "in", "seq": 7, "t": 55.5432, "t_mt": 55.5431, "text_tgt": "tiene alguna pregunta"}
+{"ev": "mt", "channel": "in", "seq": 8, "t": 56.89, "t_mt": 56.8899, "text_tgt": "para nosotros?"}
+{"ev": "asr", "channel": "out", "kind": "partial", "t_recv": 57.7779, "text": "Me"}
+{"ev": "asr", "channel": "out", "kind": "partial", "t_recv": 58.2406, "text": "Me gustaría saber"}
+{"ev": "asr", "channel": "out", "kind": "partial", "t_recv": 58.6564, "text": "Me gustaría saber cómo"}
+{"ev": "asr", "channel": "out", "kind": "partial", "t_recv": 58.7262, "text": "Me gustaría saber cómo es"}
+{"ev": "asr", "channel": "out", "kind": "partial", "t_recv": 59.0526, "text": "Me gustaría saber cómo es un"}
+{"ev": "asr", "channel": "out", "kind": "partial", "t_recv": 59.1874, "text": "Me gustaría saber cómo es un día"}
+{"ev": "asr", "channel": "out", "kind": "partial", "t_recv": 59.5981, "text": "Me gustaría saber cómo es un día normal"}
+{"ev": "commit", "channel": "out", "seq": 14, "commit_id": 0, "utterance_id": "out:5", "text_src": "Me gustaría saber cómo es un día", "t_commit": 59.5981, "t_src_start": 56.66, "t_src_end": 58.6029}
+{"ev": "asr", "channel": "out", "kind": "partial", "t_recv": 59.7584, "text": "Me gustaría saber cómo es un día normal en"}
+{"ev": "asr", "channel": "out", "kind": "partial", "t_recv": 60.1069, "text": "Me gustaría saber cómo es un día normal en el"}
+{"ev": "asr", "channel": "out", "kind": "partial", "t_recv": 60.3241, "text": "Me gustaría saber cómo es un día normal en el equipo"}
+{"ev": "mt", "channel": "out", "seq": 14, "t": 60.4683, "t_mt": 60.4683, "text_tgt": "I'd like to know what a day"}
+{"ev": "asr", "channel": "out", "kind": "partial", "t_recv": 60.8218, "text": "Me gustaría saber cómo es un día normal en el equipo y"}
+{"ev": "asr", "channel": "out", "kind": "partial", "t_recv": 61.1162, "text": "Me gustaría saber cómo es un día normal en el equipo y qué"}
+{"ev": "commit", "channel": "out", "seq": 15, "commit_id": 1, "utterance_id": "out:5", "text_src": "normal en el equipo", "t_commit": 61.1162, "t_src_start": 58.6876, "t_src_end": 59.7343}
+{"ev": "asr", "channel": "out", "kind": "partial", "t_recv": 61.6052, "text": "Me gustaría saber cómo es un día normal en el equipo y qué esperan"}
+{"ev": "asr", "channel": "out", "kind": "partial", "t_recv": 61.6723, "text": "Me gustaría saber cómo es un día normal en el equipo y qué esperan lograr"}
+{"ev": "asr", "channel": "out", "kind": "partial", "t_recv": 61.9216, "text": "Me gustaría saber cómo es un día normal en el equipo y qué esperan lograr en"}
+{"ev": "mt", "channel": "out", "seq": 15, "t": 62.0557, "t_mt": 62.0556, "text_tgt": "normal on the team"}
+{"ev": "asr", "channel": "out", "kind": "partial", "t_recv": 62.2592, "text": "Me gustaría saber cómo es un día normal en el equipo y qué esperan lograr en los"}
+{"ev": "asr", "channel": "out", "kind": "partial", "t_recv": 62.5037, "text": "Me gustaría saber cómo es un día normal en el equipo y qué esperan lograr en los primeros"}
+{"ev": "commit", "channel": "out", "seq": 16, "commit_id": 2, "utterance_id": "out:5", "text_src": "y qué esperan lograr", "t_commit": 62.5037, "t_src_start": 60.14, "t_src_end": 61.2771}
+{"ev": "asr", "channel": "out", "kind": "partial", "t_recv": 62.9107, "text": "Me gustaría saber cómo es un día normal en el equipo y qué esperan lograr en los primeros seis"}
+{"ev": "asr", "channel": "out", "kind": "partial", "t_recv": 63.0571, "text": "Me gustaría saber cómo es un día normal en el equipo y qué esperan lograr en los primeros seis meses"}
+{"ev": "commit", "channel": "out", "seq": 17, "commit_id": 3, "utterance_id": "out:5", "text_src": "en los primeros seis meses", "t_commit": 63.1072, "t_src_start": 61.0876, "t_src_end": 62.4429}
+{"ev": "asr", "channel": "out", "kind": "speechComplete", "t_recv": 63.1076, "text": "Me gustaría saber cómo es un día normal en el equipo y qué esperan lograr en los primeros seis meses"}
+{"ev": "mt", "channel": "out", "seq": 16, "t": 64.1851, "t_mt": 64.185, "text_tgt": "and what you expect to accomplish"}
+{"ev": "mt", "channel": "out", "seq": 17, "t": 64.4393, "t_mt": 64.4392, "text_tgt": "in the first six months"}
