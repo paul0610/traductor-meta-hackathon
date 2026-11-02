@@ -23,6 +23,7 @@ Work in progress during the hackathon week. Daily logs with measured numbers liv
 | Turns: their sustained speech takes the floor from my voice | done, measured with both fixtures talking over each other |
 | Context: the whole conversation and a glossary reach Spark | done, measured on latency and on ambiguous clauses |
 | One-button widget and draggable metrics line | done, used with a real mouse and real keys on the real windows; F7 and F10 not pressed, not yet used in a call |
+| Replay of a recorded session: no key, no VB-CABLE, no OBS | done and tested on Windows; macOS and Linux not run |
 | Meta end to end: MMS-TTS on this PC is the voice | done, judged by ear and measured with a real voice; a real call still to do |
 
 ## How it works (short)
@@ -48,7 +49,22 @@ Honest notes:
 - **Meta's Model API has no text-to-speech model** (checked against the docs, the live model list and the cookbook on Oct 30), so the voice is Meta's open-weight MMS-TTS on this PC. The voice is plain and single-speaker, chosen because the rules require Meta models end to end. It has no backup: nothing that is not Meta's runs, even when something fails.
 - Requires Windows 11, [VB-CABLE](https://vb-audio.com/Cable/) and headphones (with speakers the mic would re-translate the other side's voice).
 
-## Run it
+## See it in 5 minutes
+
+Needs Python 3.13 and [uv](https://docs.astral.sh/uv/), on Windows, macOS or Linux; Linux also needs PortAudio (`sudo apt install libportaudio2`). No key, no VB-CABLE, no OBS.
+
+```
+uv sync --locked
+uv run python -m interprete.replay
+```
+
+It replays a short job interview recorded on Nov 2 through the real chain: the interviewer asks in English and I answer in Spanish, both voices synthetic, Meta's MMS-TTS. You hear the interviewer, my Spanish 14 dB lower, and the English interpretation, which MMS-TTS makes again on your PC at the moments the run produced it. The band at the bottom of the screen shows the interviewer's words in Spanish, and my Spanish with its English. Nothing reaches Meta's API: the listening and translating were done when it was recorded, and [`demo/interview/about.json`](demo/interview/about.json) says when, with which commit, and what that run measured. The first run downloads the voice, about 150 MB; the replay itself takes a little over a minute.
+
+`--no-overlay` prints the subtitles in the console instead, and `--wav out.wav` writes the audio to a file instead of the speakers. `scripts/export_session.py` turns any run's log into a session like this one. Replay is `python -m interprete.replay`; to go live, see the next section.
+
+Tested on Windows. It has not been run on macOS or Linux; a test checks that it imports without any Windows-only module.
+
+## Run it live
 
 Requires Windows 11, Python 3.13, [uv](https://docs.astral.sh/uv/), headphones, and [VB-CABLE](https://vb-audio.com/Cable/) (restart Windows after installing it). OBS Studio and ffmpeg are only for the synchronized dub. The English voice, about 150 MB, downloads on first use with no account. The microphone is the Windows default unless `RTT_MIC_NAME` says otherwise.
 
@@ -84,7 +100,7 @@ To check it without speaking: `uv run python scripts/make_fixtures.py`, then `uv
 
 **Level on the cable.** Windows has two sliders that scale everything the call hears: the one on `CABLE Input`, and the one it keeps for each app in the volume mixer, which it remembers between runs. The bar shows `CABLE 22 %` or `PYTHON 3 %` if either is low.
 
-Dependencies are pinned exactly and locked (`uv.lock`), resolved with a supply-chain cooldown: nothing published after Oct 22, 2026 (`exclude-newer`, as a UTC time so the lock matches in every time zone).
+Dependencies are pinned exactly and locked (`uv.lock`), resolved with a supply-chain cooldown: nothing published after Oct 22, 2026 (`exclude-newer`, as a UTC time so the lock matches in every time zone). `uv run python scripts/check_lock.py` checks it in six zones. On Linux, torch comes from PyTorch's CPU index, without the CUDA libraries PyPI's carries.
 
 **Spanglish.** Say it in English, fall into Spanish when you get stuck, and one English voice comes out. "Cómo se dice" and "no sé" are dropped as fillers. Known limit: on a synthetic voice the ASR kept between 0 and 11 of 13 Spanish words inside English speech, and sometimes skips a passage entirely, so that passage is not interpreted. Terms in the glossary raised it to 10–13 of 13.
 
@@ -96,15 +112,17 @@ Dependencies are pinned exactly and locked (`uv.lock`), resolved with a supply-c
 
 Every run writes one JSONL line per event to `logs/` (fields in SPEC §4). Numbers are reported per day in `docs/log/`.
 
-Gates on this PC, default settings, Nov 1 and 2, on synthetic voices unless it says otherwise. A real call is still to come here.
+Gates on this PC, default settings, on synthetic voices unless it says otherwise, Lima time. A real call is still to come here. Spark's latency changes from day to day, p95 1.4 to 1.9 s on Nov 1 and 2.3 to 3.3 s on Nov 2, so every number says when it was measured.
 
-| Gate | Result |
-|---|---|
-| 0: Spanish in, English on the cable | 34 of 34 clauses played, 100 % of the bytes, 0 gaps |
-| 60 s, both directions | commit to first PCM p50 2.04 s, p95 3.20 s, 0 gaps; one clause lost, see below |
-| S: dub, D 7.0 s, p95 of sync error at most 0.5 s | 5 of 7 runs pass, at 0.25 to 0.45 s; the other two at 0.56 and 0.62 s. None over 1 s late, none early; one run lost a clause, see below |
-| S with my own voice, 60 s, with the cap then at 25 % | passes: 0.147 s, 30 of 30 clauses played. Against the lips where a phrase opens: p95 0.80 s; 5 of 25 over 0.5 s, 1 over 1 s |
-| MMS-TTS, whole clause ready | p50 0.60 s, p95 0.83 s, 164 clauses, 4 threads |
+| Gate | When | Result |
+|---|---|---|
+| 0: Spanish in, English on the cable | Nov 2, 07:24, single run | 34 of 34 clauses played, 100 % of the bytes, 0 gaps |
+| No dub: end of a phrase to the English voice | Nov 1 20:09, Nov 2 07:24 and 08:12, one run each | p50 3.0 to 3.4 s, p95 4.0 to 5.0 s |
+| 60 s, both directions | Nov 1, 19:41, single run | commit to first PCM p50 2.04 s, p95 3.20 s, 0 gaps; one clause lost, see below |
+| S: dub, D 7.0 s, p95 of sync error at most 0.5 s | Nov 1 19:36 to 20:11, 4 runs; Nov 2 07:27 to 07:37, 3 runs | 5 of 7 runs pass, at 0.25 to 0.45 s; the other two at 0.56 and 0.62 s. None over 1 s late, none early; one run lost a clause, see below |
+| S with my own voice, 60 s, with the cap then at 25 % | Nov 1, 19:28, single run | passes: 0.147 s, 30 of 30 clauses played. Against the lips where a phrase opens: p95 0.80 s; 5 of 25 over 0.5 s, 1 over 1 s |
+| MMS-TTS, whole clause ready | Nov 1, 164 clauses over 5 runs | p50 0.60 s, p95 0.83 s, 4 threads |
+| The interview in `demo/` | Nov 2, 08:12, single run | 18 of 18 English clauses played, 0 gaps; their subtitles p50 2.90 s after each phrase |
 
 Known limits. When a clause is late it is because the English before it ran long, not because the voice or Spark were slow: late clauses were ready 1 s or more before their turn. A last word the clause before already translated can hold Spark past its limit; the listener misses nothing, but the gates count that clause as lost. Telling Spark it may answer nothing was worse: p95 went from 1.60 to 2.40 s and it dropped a real clause.
 
