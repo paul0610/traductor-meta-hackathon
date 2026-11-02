@@ -18,7 +18,7 @@ Work in progress during the hackathon week. Daily logs with measured numbers liv
 | Incoming chain: loopback → ASR → Spark → subtitles | done, measured on real system audio |
 | Safety: silent rest state, F9 latch, F10 via Core Audio, watchdog, restore on exit | done, physical keys pending |
 | Incremental clause commits (LA-2), both directions | done, measured on synthetic voices |
-| Synchronized dub with fixed delay D | audio measured on synthetic voices, picture and sound calibrated with real claps (+23 ms); a real voice and a real call still to do |
+| Synchronized dub with fixed delay D | done; measured on synthetic voices and with my own voice (gate S passed, 30 of 30 clauses), picture and sound calibrated with real claps (+23 ms); a real call still to do |
 | Spanglish: English that falls into Spanish comes out as one English voice | done and measured on a synthetic voice; the ASR sometimes drops whole Spanish passages |
 | Turns: their sustained speech takes the floor from my voice | done, measured with both fixtures talking over each other |
 | Context: the whole conversation and a glossary reach Spark | done, measured on latency and on ambiguous clauses |
@@ -50,7 +50,7 @@ Honest notes:
 
 ## Run it
 
-Requires Windows 11, Python 3.13, [uv](https://docs.astral.sh/uv/), headphones, and [VB-CABLE](https://vb-audio.com/Cable/) (restart Windows after installing it). OBS Studio is only for the synchronized dub. The English voice, about 150 MB, downloads on first use with no account. The microphone is the Windows default unless `RTT_MIC_NAME` says otherwise.
+Requires Windows 11, Python 3.13, [uv](https://docs.astral.sh/uv/), headphones, and [VB-CABLE](https://vb-audio.com/Cable/) (restart Windows after installing it). OBS Studio and ffmpeg are only for the synchronized dub. The English voice, about 150 MB, downloads on first use with no account. The microphone is the Windows default unless `RTT_MIC_NAME` says otherwise.
 
 ```powershell
 uv sync --locked
@@ -59,7 +59,7 @@ uv run python scripts/test_cable.py          # the voice -> CABLE Input, verifie
 uv run python scripts/asr_live.py            # live mic -> Muse Voice Transcribe, events printed
 ```
 
-Before a call, `uv run python scripts/warmcheck.py` tests everything a call needs and changes nothing. Then double-click **`Interprete.bat`**: it starts both directions and the subtitle overlay. In your call app pick `CABLE Output` as the microphone, unmuted, with noise cancellation off. The other side only hears the English voice; your raw voice reaches the cable only if you ask for it.
+Before a call, `uv run python scripts/warmcheck.py` tests everything a call needs and changes nothing. Then double-click **`Interprete.bat`**: it starts both directions and the subtitle overlay. In your call app pick `CABLE Output` as the microphone, unmuted, with noise cancellation off. The other side hears the English voice, and with the dub your own voice 20 dB under it (`RTT_VOICE_UNDER_DB`). Your raw voice goes out alone only with F9, or by itself when the ASR is down for more than 3 s or the outgoing chain fails, so the other side is never left in silence.
 
 | Key | Action |
 |---|---|
@@ -76,15 +76,15 @@ Before a call, `uv run python scripts/warmcheck.py` tests everything a call need
 
 **Sounds.** A short cue when the button changes state, so you do not have to look at it: ready, live, muted and back, raw voice, they took the floor, stopping. They play on your headphones and never reach the cable. `RTT_SOUNDS=0` turns them off.
 
-**The voice.** MMS-TTS only knows letters, apostrophes and hyphens: it loses digits, symbols, accents and punctuation in silence. Spark is asked to write numbers in words, and `tts/spoken.py` catches what gets through, so "$120" and "Núñez" are still said. `RTT_MMS_SPEAKING_RATE` sets the pace: lower is calmer, and the English then outlasts the Spanish it translates. A clause longer than its Spanish is sped up by 12 % at most: at 25 % it could no longer be understood, and few clauses need it.
+**The voice.** MMS-TTS cannot read digits, symbols, accents or punctuation: its tokenizer drops most of them in silence. Spark is asked to write numbers in words, and `tts/spoken.py` catches what gets through, so "$120" and "Núñez" are still said. `RTT_MMS_SPEAKING_RATE` sets the pace: lower is calmer, and the English then outlasts the Spanish it translates. A clause longer than its Spanish is sped up by 12 % at most: at 25 % it could no longer be understood, and few clauses need it.
 
 To check it without speaking: `uv run python scripts/make_fixtures.py`, then `uv run python scripts/gate_60s.py` runs both chains on synthetic voices and judges the run from its log. `uv run python scripts/gate_sync.py` does the same for the dub, and also compares each clause's timing against the real word times of the fixture. With `--voice` it runs on your own voice and camera for 60 s, checks where each turn opens against the microphone, and leaves in `logs/` a 20 s clip of what the other side gets.
 
-**Synchronized dub** (`RTT_DUB=1` or `--dub`): the other side gets my video and voice D seconds late, so the English voice starts and stops with my lips. Needs OBS Studio installed once for its virtual camera driver; OBS itself stays closed. Pick `OBS Virtual Camera` in the call, and run `uv run python scripts/calibrate_av_offset.py` once to line up picture and voice. The self-view shows the delayed video, and with a shared screen the cursor runs D seconds ahead of the voice, so turn the dub off to share.
+**Synchronized dub** (`RTT_DUB=1` or `--dub`): the other side gets my video and voice D seconds late, so the English voice starts and stops with my lips. Needs OBS Studio installed once for its virtual camera driver, and OBS itself stays closed. It also needs ffmpeg on the PATH (`winget install Gyan.FFmpeg`), which finds the webcam by name. Set `RTT_CAMERA_NAME` to part of your webcam's name. Pick `OBS Virtual Camera` in the call. Run `uv run python scripts/calibrate_av_offset.py` once: it prints the offset between picture and voice, and you put it in `RTT_AV_OFFSET_MS`. The self-view shows the delayed video, and with a shared screen the cursor runs D seconds ahead of the voice, so turn the dub off to share.
 
 **Level on the cable.** Windows has two sliders that scale everything the call hears: the one on `CABLE Input`, and the one it keeps for each app in the volume mixer, which it remembers between runs. The bar shows `CABLE 22 %` or `PYTHON 3 %` if either is low.
 
-Dependencies are pinned exactly and locked (`uv.lock`), resolved with a supply-chain cooldown (`exclude-newer = "2026-10-22"`).
+Dependencies are pinned exactly and locked (`uv.lock`), resolved with a supply-chain cooldown: nothing published after Oct 22, 2026 (`exclude-newer`, as a UTC time so the lock matches in every time zone).
 
 **Spanglish.** Say it in English, fall into Spanish when you get stuck, and one English voice comes out. "Cómo se dice" and "no sé" are dropped as fillers. Known limit: on a synthetic voice the ASR kept between 0 and 11 of 13 Spanish words inside English speech, and sometimes skips a passage entirely, so that passage is not interpreted. Terms in the glossary raised it to 10–13 of 13.
 
@@ -96,19 +96,19 @@ Dependencies are pinned exactly and locked (`uv.lock`), resolved with a supply-c
 
 Every run writes one JSONL line per event to `logs/` (fields in SPEC §4). Numbers are reported per day in `docs/log/`.
 
-Gates on this PC, default settings, Nov 1, on synthetic voices unless it says otherwise. A real call is still to come here.
+Gates on this PC, default settings, Nov 1 and 2, on synthetic voices unless it says otherwise. A real call is still to come here.
 
 | Gate | Result |
 |---|---|
 | 0: Spanish in, English on the cable | 34 of 34 clauses played, 100 % of the bytes, 0 gaps |
 | 60 s, both directions | commit to first PCM p50 2.04 s, p95 3.20 s, 0 gaps; one clause lost, see below |
-| S: dub, D 7.0 s, p95 of sync error at most 0.5 s | 0.25 to 0.45 s in 4 runs, none over 1 s late, none early; one run lost a clause, see below |
+| S: dub, D 7.0 s, p95 of sync error at most 0.5 s | 5 of 7 runs pass, at 0.25 to 0.45 s; the other two at 0.56 and 0.62 s. None over 1 s late, none early; one run lost a clause, see below |
 | S with my own voice, 60 s, with the cap then at 25 % | passes: 0.147 s, 30 of 30 clauses played. Against the lips where a phrase opens: p95 0.80 s; 5 of 25 over 0.5 s, 1 over 1 s |
 | MMS-TTS, whole clause ready | p50 0.60 s, p95 0.83 s, 164 clauses, 4 threads |
 
-Known limits. When a clause is late it is because the English before it ran long, not because the voice or Spark were slow: late clauses were ready 1 s or more before their turn. A last word the clause before already translated can hold Spark past its limit; the listener misses nothing, but the gates count that clause as lost. Telling Spark it may answer nothing was worse: p95 went from 1.60 to 2.40 s and it dropped real clauses.
+Known limits. When a clause is late it is because the English before it ran long, not because the voice or Spark were slow: late clauses were ready 1 s or more before their turn. A last word the clause before already translated can hold Spark past its limit; the listener misses nothing, but the gates count that clause as lost. Telling Spark it may answer nothing was worse: p95 went from 1.60 to 2.40 s and it dropped a real clause.
 
-Reproduce them with `scripts/make_fixtures.py`, then `scripts/gate_60s.py` and `scripts/gate_sync.py`.
+Reproduce them with `scripts/make_fixtures.py`, then `scripts/gate_60s.py` and `scripts/gate_sync.py`. Gate 0 is a plain run, `uv run python -m interprete.app --out-only --no-overlay --delay 0 --wav-out logs/fixture_es.wav`, whose summary counts the clauses that played.
 
 ## Roadmap (after the hackathon, no code this week)
 
