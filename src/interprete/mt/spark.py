@@ -1,9 +1,9 @@
 """Muse Spark translation with structured JSON output and minimum reasoning.
 
-OpenAI-SDK compatible endpoint (`https://api.meta.ai/v1`). `reasoning_effort`
-runs none < minimal < low < medium < high; the cookbook (01_api_fundamentals/
-06_reasoning_tokens) says "none" is not reliably available on the public
-endpoint yet, so "minimal" is the default and "none" is tried only on request.
+OpenAI-SDK compatible endpoint (`https://api.meta.ai/v1`). "minimal" is the
+lowest `reasoning_effort` it takes: on Nov 2 "none" got a 400 listing minimal,
+low, medium, high, xhigh and max. The cookbook (01_api_fundamentals/
+06_reasoning_tokens) already said "none" was not reliably available.
 """
 
 from __future__ import annotations
