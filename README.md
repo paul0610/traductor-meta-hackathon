@@ -6,6 +6,8 @@
 
 Track: **Indie Developer** · Theme: **Build for Your World**. I understand English but I am slow to speak it under pressure (interviews, meetings). This is "work in English today", not "learn English".
 
+> **Tested on Windows 11.** Every test, gate and measurement in this README, the recorded session in `demo/` and the demo video were made on one Windows 11 Pro PC (build 26200, AMD Ryzen 9 6900HX, 32 GB of RAM), with the voice on the CPU. The live interpreter runs only on Windows. The replay also installs on macOS and Linux, but it has not been run there yet. See [Setup](#setup).
+
 ## Status
 
 Work in progress during the hackathon week. Daily logs with measured numbers live in [`docs/log/`](docs/log/).
@@ -47,35 +49,109 @@ Design, contracts, clock model and safety rules: [`docs/SPEC.md`](docs/SPEC.md).
 
 Honest notes:
 - **Meta's Model API has no text-to-speech model** (checked against the docs, the live model list and the cookbook on Oct 30), so the voice is Meta's open-weight MMS-TTS on this PC. The voice is plain and single-speaker, chosen because the rules require Meta models end to end. It has no backup: nothing that is not Meta's runs, even when something fails.
-- Requires Windows 11, [VB-CABLE](https://vb-audio.com/Cable/) and headphones (with speakers the mic would re-translate the other side's voice).
+- The live interpreter requires Windows 11, [VB-CABLE](https://vb-audio.com/Cable/) and headphones (with speakers the mic would re-translate the other side's voice).
 
 ## See it in 5 minutes
 
-This plays a recorded session again: a short job interview with **synthetic voices on both sides** (Meta's MMS-TTS), not a real call. The listening and translating were done by the real Muse Voice Transcribe and Muse Spark when it was recorded, on Nov 2. No key, no VB-CABLE, no OBS:
+This plays a recorded session again: a short job interview with **synthetic voices on both sides** (Meta's MMS-TTS), not a real call. The listening and translating were done by the real Muse Voice Transcribe and Muse Spark when it was recorded, on Nov 2, on Windows 11. No key, no VB-CABLE, no OBS. Install it for your system as in [Setup](#setup), then:
 
 ```
+uv run python -m interprete.replay
+```
+
+The interviewer asks in English and I answer in Spanish. You hear the interviewer, my Spanish 14 dB lower, and the English interpretation, which MMS-TTS makes again on your computer at the moments the run produced it. The band at the bottom of the screen shows the interviewer's words in Spanish, and my Spanish with its English. Nothing reaches Meta's API, and [`demo/interview/about.json`](demo/interview/about.json) says when it was recorded, with which commit, and what that run measured. The replay takes a little over a minute, after about 20 s loading the voice.
+
+`--no-overlay` prints the subtitles in the console instead, and `--wav out.wav` writes the audio to a file instead of the speakers. Ctrl-C stops it. `scripts/export_session.py` turns any run's log into a session like this one. Replay is `python -m interprete.replay`; to go live, see [Run it live](#run-it-live-windows-11).
+
+## Setup
+
+> **Only Windows 11 was tested.** The macOS and Linux steps below install the replay, and were checked with a dry run of the locked install, not on real machines.
+
+| | Windows 11 | macOS 14+ on Apple silicon | Linux x86_64, glibc 2.34+ |
+|---|---|---|---|
+| Replay of the recorded interview | tested | installs in a dry run, not run yet | installs in a dry run, not run yet |
+| Live interpreter in a call | tested | not available | not available |
+
+The live interpreter is Windows-only: it needs a virtual microphone (VB-CABLE), the loopback of the system audio (WASAPI), Core Audio to give your microphone back, global hotkeys and, for the dub, OBS's virtual camera driver. On macOS and Linux those packages are not even installed.
+
+Every system needs [uv](https://docs.astral.sh/uv/) and Git. `uv sync --locked` installs Python 3.13 by itself if it is missing, and the exact packages in `uv.lock`, pinned and resolved with a supply-chain cooldown: nothing published after Oct 22, 2026, written as a UTC time so the lock matches in every time zone (`uv run python scripts/check_lock.py` checks six). The first replay or call downloads the English voice, about 150 MB, with no account.
+
+### Windows 11 (tested)
+
+In PowerShell:
+
+```powershell
+winget install --id=astral-sh.uv -e
+winget install --id=Git.Git -e
+```
+
+Open a new PowerShell window, so both are on the PATH, and:
+
+```powershell
+git clone https://github.com/paul0610/traductor-meta-hackathon.git
+cd traductor-meta-hackathon
 uv sync --locked
 uv run python -m interprete.replay
 ```
 
-The interviewer asks in English and I answer in Spanish. You hear the interviewer, my Spanish 14 dB lower, and the English interpretation, which MMS-TTS makes again on your computer at the moments the run produced it. The band at the bottom of the screen shows the interviewer's words in Spanish, and my Spanish with its English. Nothing reaches Meta's API, and [`demo/interview/about.json`](demo/interview/about.json) says when it was recorded, with which commit, and what that run measured. The first run downloads the voice, about 150 MB; the replay itself takes a little over a minute.
+That is all the replay needs. For live calls, also:
 
-`--no-overlay` prints the subtitles in the console instead, and `--wav out.wav` writes the audio to a file instead of the speakers. `scripts/export_session.py` turns any run's log into a session like this one. Replay is `python -m interprete.replay`; to go live, see the next section.
+1. **VB-CABLE**, the virtual microphone: download it from [vb-audio.com/Cable](https://vb-audio.com/Cable/), unzip it, run `VBCABLE_Setup_x64.exe` as administrator, click *Install Driver* and restart Windows.
+2. **A Meta API key**, from [dev.meta.ai](https://dev.meta.ai): run `copy .env.example .env` and paste the key after `MODEL_API_KEY=` in `.env`, which git ignores.
+3. **Headphones.** With speakers, the microphone hears the other side and the app translates their voice back.
+4. **Microphone access:** Settings › Privacy & security › Microphone › *Let desktop apps access your microphone*, on. For the dub, the same under Camera.
+5. **For the synchronized dub only:** OBS Studio, installed once and left closed, for its virtual camera driver, and ffmpeg, which finds the webcam by name. Then set `RTT_DUB=1` and `RTT_CAMERA_NAME` in `.env`.
+   ```powershell
+   winget install --id=OBSProject.OBSStudio -e
+   winget install --id=Gyan.FFmpeg -e
+   ```
+6. **Check it:** `uv run python scripts/warmcheck.py` tests everything a call needs and changes nothing. Then see [Run it live](#run-it-live-windows-11).
 
-It needs Python 3.13 and [uv](https://docs.astral.sh/uv/), on Windows; macOS 14 or later on Apple silicon; or Linux x86_64 with glibc 2.34 or later, such as Ubuntu 22.04 or Debian 12, plus PortAudio (`sudo apt install libportaudio2`). PyTorch publishes nothing for Intel Macs, and the screen library nothing for older systems. Tested on Windows. For macOS and Linux, a dry run of the locked install finds every package and a test checks that the replay imports without any Windows-only module, but the replay itself has not been run there yet.
+### macOS 14 or later, Apple silicon (replay only, not run yet)
 
-## Run it live
+In Terminal:
 
-Requires Windows 11, Python 3.13, [uv](https://docs.astral.sh/uv/), headphones, and [VB-CABLE](https://vb-audio.com/Cable/) (restart Windows after installing it). OBS Studio and ffmpeg are only for the synchronized dub. The English voice, about 150 MB, downloads on first use with no account. The microphone is the Windows default unless `RTT_MIC_NAME` says otherwise.
-
-```powershell
-uv sync --locked
-copy .env.example .env   # then put your MODEL_API_KEY in .env, from https://dev.meta.ai
-uv run python scripts/test_cable.py          # the voice -> CABLE Input, verified on CABLE Output
-uv run python scripts/asr_live.py            # live mic -> Muse Voice Transcribe, events printed
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+xcode-select --install
 ```
 
-Before a call, `uv run python scripts/warmcheck.py` tests everything a call needs and changes nothing. Then double-click **`Interprete.bat`**: it starts both directions and the subtitle overlay. In your call app pick `CABLE Output` as the microphone, unmuted, with noise cancellation off. The other side hears the English voice, and with the dub your own voice 20 dB under it (`RTT_VOICE_UNDER_DB`). Your raw voice goes out alone only with F9, or by itself when the ASR is down for more than 3 s or the outgoing chain fails, so the other side is never left in silence.
+The first installs uv (or `brew install uv`); the second installs Git, if macOS does not have it yet. Open a new terminal, and:
+
+```bash
+git clone https://github.com/paul0610/traductor-meta-hackathon.git
+cd traductor-meta-hackathon
+uv sync --locked
+uv run python -m interprete.replay
+```
+
+Nothing else: on macOS the audio library ships inside the `sounddevice` package. Intel Macs cannot run it, because PyTorch publishes no build for them, and neither can macOS 13, for which the screen library, PySide6 6.12, publishes nothing. If the band does not show, `--no-overlay` prints the subtitles in the terminal.
+
+### Linux x86_64 (replay only, not run yet)
+
+It needs glibc 2.34 or later, as in Ubuntu 22.04, Debian 12 or Fedora 35; `ldd --version` shows yours. On Debian or Ubuntu:
+
+```bash
+sudo apt install git curl libportaudio2
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+On Fedora the first line is `sudo dnf install git curl portaudio`. Open a new terminal, and:
+
+```bash
+git clone https://github.com/paul0610/traductor-meta-hackathon.git
+cd traductor-meta-hackathon
+uv sync --locked
+uv run python -m interprete.replay
+```
+
+PyTorch comes from its CPU index, without the 2.5 GB of CUDA libraries in PyPI's build: the voice runs on the CPU. The band needs a desktop session. If Qt says it could not load the "xcb" platform plugin, the usual missing package is `libxcb-cursor0` (`xcb-util-cursor` on Fedora), or run with `--no-overlay`. If nothing sounds, `--wav out.wav` writes the audio to a file.
+
+## Run it live (Windows 11)
+
+Set it up as in [Setup › Windows 11](#windows-11-tested) first. Then double-click **`Interprete.bat`**: it starts both directions and the subtitle overlay. In your call app pick `CABLE Output` as the microphone, unmuted, with noise cancellation off, and with the dub pick `OBS Virtual Camera` as the camera. The other side hears the English voice, and with the dub your own voice 20 dB under it (`RTT_VOICE_UNDER_DB`). Your raw voice goes out alone only with F9, or by itself when the ASR is down for more than 3 s or the outgoing chain fails, so the other side is never left in silence.
+
+Two optional checks: `uv run python scripts/test_cable.py` plays the voice into `CABLE Input` and verifies it on `CABLE Output`, and `uv run python scripts/asr_live.py` sends your microphone to Muse Voice Transcribe and prints its events.
 
 | Key | Action |
 |---|---|
@@ -96,11 +172,9 @@ Before a call, `uv run python scripts/warmcheck.py` tests everything a call need
 
 To check it without speaking: `uv run python scripts/make_fixtures.py`, then `uv run python scripts/gate_60s.py` runs both chains on synthetic voices and judges the run from its log. `uv run python scripts/gate_sync.py` does the same for the dub, and also compares each clause's timing against the real word times of the fixture. With `--voice` it runs on your own voice and camera for 60 s, checks where each turn opens against the microphone, and leaves in `logs/` a 20 s clip of what the other side gets.
 
-**Synchronized dub** (`RTT_DUB=1` or `--dub`): the other side gets my video and voice D seconds late, so the English voice starts and stops with my lips. Needs OBS Studio installed once for its virtual camera driver, and OBS itself stays closed. It also needs ffmpeg on the PATH (`winget install Gyan.FFmpeg`), which finds the webcam by name. Set `RTT_CAMERA_NAME` to part of your webcam's name. Pick `OBS Virtual Camera` in the call: it is there from `LISTO`, showing a card, so you can pick it before you click, and the webcam opens only with the click. Until then the band says, in English, which camera to pick and what each one costs. Run `uv run python scripts/calibrate_av_offset.py` once: it prints the offset between picture and voice, and you put it in `RTT_AV_OFFSET_MS`. The self-view shows the delayed video, and with a shared screen the cursor runs D seconds ahead of the voice, so turn the dub off to share.
+**Synchronized dub** (`RTT_DUB=1` or `--dub`): the other side gets my video and voice D seconds late, so the English voice starts and stops with my lips. It needs OBS Studio, installed once and left closed, and ffmpeg, as in [Setup](#windows-11-tested). It is off by default: set `RTT_DUB=1`, and `RTT_CAMERA_NAME` to part of your webcam's name. Pick `OBS Virtual Camera` in the call: it is there from `LISTO`, showing a card, so you can pick it before you click, and the webcam opens only with the click. Until then the band says, in English, which camera to pick and what each one costs. Run `uv run python scripts/calibrate_av_offset.py` once: it prints the offset between picture and voice, and you put it in `RTT_AV_OFFSET_MS`. The self-view shows the delayed video, and with a shared screen the cursor runs D seconds ahead of the voice, so turn the dub off to share.
 
 **Level on the cable.** Windows has two sliders that scale everything the call hears: the one on `CABLE Input`, and the one it keeps for each app in the volume mixer, which it remembers between runs. The bar shows `CABLE 22 %` or `PYTHON 3 %` if either is low.
-
-Dependencies are pinned exactly and locked (`uv.lock`), resolved with a supply-chain cooldown: nothing published after Oct 22, 2026 (`exclude-newer`, as a UTC time so the lock matches in every time zone). `uv run python scripts/check_lock.py` checks it in six zones. On Linux, torch comes from PyTorch's CPU index, without the CUDA libraries PyPI's carries.
 
 **Spanglish.** Say it in English, fall into Spanish when you get stuck, and one English voice comes out. "Cómo se dice" and "no sé" are dropped as fillers. Known limit: on a synthetic voice the ASR kept between 0 and 11 of 13 Spanish words inside English speech, and sometimes skips a passage entirely, so that passage is not interpreted. Terms in the glossary raised it to 10–13 of 13.
 
@@ -112,7 +186,7 @@ Dependencies are pinned exactly and locked (`uv.lock`), resolved with a supply-c
 
 Every run writes one JSONL line per event to `logs/` (fields in SPEC §4). Numbers are reported per day in `docs/log/`.
 
-Gates on this PC, default settings, on synthetic voices unless it says otherwise, Lima time. Two calls on Nov 2 went through Google Meet with my phone as the other side, muted, so they measure only my direction. Spark's latency changes from day to day, p95 1.4 to 1.9 s on Nov 1 and 2.3 to 3.3 s on Nov 2, so every number says when it was measured.
+Gates on the Windows 11 PC described at the top, default settings, on synthetic voices unless it says otherwise, Lima time. Two calls on Nov 2 went through Google Meet with my phone as the other side, muted, so they measure only my direction. Spark's latency changes from day to day, p95 1.4 to 1.9 s on Nov 1 and 2.3 to 3.3 s on Nov 2, so every number says when it was measured.
 
 | Gate | When | Result |
 |---|---|---|
