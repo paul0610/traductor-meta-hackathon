@@ -38,5 +38,14 @@ build-backend = "uv_build"
 # machine's time zone, and the lock would fail to match anywhere east of Lima, so it is the end of Oct 22 in Lima, in UTC.
 exclude-newer = "2026-10-23T05:00:00Z"
 
+[tool.uv.sources]
+# PyPI's torch for Linux carries CUDA, about 2.5 GB nothing here uses: MMS runs on the CPU. Windows and macOS wheels are CPU already.
+torch = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
