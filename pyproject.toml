@@ -34,8 +34,9 @@ requires = ["uv_build==0.13.5"]
 build-backend = "uv_build"
 
 [tool.uv]
-# Supply-chain cooldown: nothing published after this date is a candidate.
-exclude-newer = "2026-10-22"
+# Supply-chain cooldown: nothing published after this moment is a candidate. A bare date would be read in each
+# machine's time zone, and the lock would fail to match anywhere east of Lima, so it is the end of Oct 22 in Lima, in UTC.
+exclude-newer = "2026-10-23T05:00:00Z"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
