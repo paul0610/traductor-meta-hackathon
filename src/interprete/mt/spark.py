@@ -119,7 +119,7 @@ class Spark:
         )
         t_end = now()
         out = json.loads(resp.choices[0].message.content)["translation"].strip()
-        if not out:
+        if not any(c.isalnum() for c in out):        # a lone "." also means it has nothing to say
             raise EmptyTranslation
         usage = resp.usage
         details = getattr(usage, "completion_tokens_details", None) if usage else None

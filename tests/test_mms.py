@@ -1,14 +1,11 @@
 import asyncio
-import subprocess
-import sys
-import threading
 import time
+from pathlib import Path
 
 import numpy as np
 
-from interprete import config
-from interprete.tts.backup import local_voice, make_voice
 from interprete.tts.mms import PACE, RATE, WARM_TEXT, MmsVoice
+from interprete.tts.shaping import FAST_RATE_PCT
 
 OUT = 48000
 
@@ -106,28 +103,9 @@ def test_pace_follows_the_speaking_rate_and_the_text_as_said():
     assert voice(model, speaking_rate=1.2).pace == PACE[1.15]
     v = voice(model)
     assert v.rate_for("Good morning.", None) == 0
-    assert v.rate_for("About 120", 0.9) == 25        # "about one hundred and twenty" is much longer than it looks
+    assert v.rate_for("About 120", 0.9) == FAST_RATE_PCT        # "about one hundred and twenty" is much longer than it looks
 
 
-def test_the_default_voice_is_mms_with_nothing_behind_it(monkeypatch):
-    for name in ("RTT_TTS_ENGINE", "RTT_TTS_BACKUP"):
-        monkeypatch.delenv(name, raising=False)
-    v = make_voice(config.load(), OUT, size=1)
-    assert isinstance(v, MmsVoice)
-    assert local_voice(v) is None                    # no clone: no card, no clone notice
-
-
-def test_a_default_run_loads_nothing_that_is_not_meta():
-    code = ("import sys; import interprete.app; from interprete import config; from interprete.tts.backup import make_voice;"
-            "make_voice(config.load(), 48000, size=1);"
-            "bad = [m for m in sys.modules if m.split('.')[0] in ('edge_tts', 'pocket_tts')"
-            " or m in ('interprete.tts.edge', 'interprete.tts.edge_session', 'interprete.tts.pocket', 'interprete.tts.own_voice')];"
-            "print(bad); sys.exit(bool(bad))")
-    r = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True,
-                       env={"PATH": "", "SYSTEMROOT": __import__("os").environ.get("SYSTEMROOT", "")}, timeout=60)
-    assert r.returncode == 0, r.stdout + r.stderr
-
-
-def test_a_load_lock_is_not_held_between_clauses():
-    v = voice(FakeModel())
-    assert isinstance(v._one_at_a_time, type(threading.Lock())) and not v._one_at_a_time.locked()
+def test_no_other_voice_is_locked():
+    lock = (Path(__file__).parents[1] / "uv.lock").read_text(encoding="utf-8")
+    assert "pocket-tts" not in lock and "edge-tts" not in lock

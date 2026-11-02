@@ -62,6 +62,12 @@ def test_an_empty_answer_is_asked_again():
     assert fake.calls == 2
 
 
+def test_a_lone_period_is_an_empty_answer():
+    spark, _ = with_script([(0.0, "."), (0.0, " . ")])
+    with pytest.raises(EmptyTranslation):
+        asyncio.run(spark.translate("pasado."))
+
+
 def test_two_empty_answers_are_an_error():
     spark, _ = with_script([(0.0, ""), (0.0, "")])
     with pytest.raises(EmptyTranslation):

@@ -18,7 +18,7 @@ import numpy as np
 RATE = 44100
 NOTE_S = 0.32
 PEAK = 0.22                    # under a call, not over it
-A3, B3, E4, C5, D5, E5, G5, A5, B5 = 220, 247, 330, 523, 587, 659, 784, 880, 988
+A3, B3, E4, C5, D5, E5, G5, A5 = 220, 247, 330, 523, 587, 659, 784, 880
 CUES: dict[str, tuple[tuple[int, float], ...]] = {    # (note, when)
     "ready": ((E5, 0.0), (A5, 0.09)),                 # it can start
     "live": ((C5, 0.0), (E5, 0.08), (G5, 0.16)),      # rising: the other side is getting me
@@ -27,8 +27,6 @@ CUES: dict[str, tuple[tuple[int, float], ...]] = {    # (note, when)
     "back": ((B3, 0.0), (E4, 0.08)),                  # the same, undone
     "raw": ((A5, 0.0), (A5, 0.13)),                   # twice, and the same note: this one needs attention
     "floor": ((D5, 0.0),),                            # they took the floor: one soft note
-    "record": ((B5, 0.0),),
-    "done": ((E5, 0.0), (B5, 0.08)),
 }
 
 

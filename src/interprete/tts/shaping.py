@@ -1,4 +1,4 @@
-"""What every voice does to a clause: the result it hands over, the silence it trims, the speed it aims for."""
+"""What becomes of a clause once the voice has it: the result it hands over, the silence it trims, the speed it aims for."""
 
 from __future__ import annotations
 
@@ -8,11 +8,9 @@ import numpy as np
 
 TRIM_THRESHOLD_DB = -50.0      # peak level per 5 ms window below which audio counts as silence
 TRIM_MARGIN_S = 0.060
-S_PER_CHAR = 0.047             # en-US-GuyNeural at rate 0, 242 clauses: length in characters predicts the duration
-S_PER_CLAUSE = 0.40            # twice as well as words (±0.13 s against ±0.29 s): "for mid-sized companies" is 3 words
 ISOCHRONY_EXCESS = 0.10        # this much longer than its slot: an overflow delays every clause behind it
 MIN_SRC_S = 0.6
-FAST_RATE_PCT = 25             # Edge answers +0 % and +25 % at once; values between stall it (SPEC §9), so only these two
+FAST_RATE_PCT = 12             # on top of MMS at 1.45, +25 % could not be understood, by ear; few clauses need it (SPEC §10)
 
 
 @dataclass(slots=True)
@@ -23,11 +21,9 @@ class TtsResult:
     t_request: float
     t_first: float | None      # first audio out of the voice
     t_end: float               # last audio out of the voice
-    t_ready: float             # decoded, resampled, trimmed
-    decode_s: float
+    t_ready: float             # resampled, trimmed
     trimmed_lead_s: float
     trimmed_tail_s: float
-    mp3_bytes: int
 
 
 def trim_silence(x: np.ndarray, rate: int, threshold_db: float = TRIM_THRESHOLD_DB,
@@ -46,13 +42,12 @@ def trim_silence(x: np.ndarray, rate: int, threshold_db: float = TRIM_THRESHOLD_
     return x[start:end], start / rate, (len(x) - end) / rate
 
 
-def isochrony_pct(text: str, src_s: float | None, s_per_char: float = S_PER_CHAR, s_per_clause: float = S_PER_CLAUSE) -> int:
+def isochrony_pct(text: str, src_s: float | None, s_per_char: float, s_per_clause: float) -> int:
     """`rate` that brings the voice close to the clause it translates (SPEC §4.1, ±15 % goal).
 
     Only ever faster: slower would add lag at D = 0, and the capped case still
     leaves the voice intelligible. A clause cut short by the ASR can look tiny,
-    so `src_s` is floored at the length of one short word in the voice. The
-    two seconds-per constants are Edge's; another voice passes its own.
+    so `src_s` is floored at the length of one short word in the voice.
     """
     if src_s is None:
         return 0

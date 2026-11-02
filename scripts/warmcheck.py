@@ -9,13 +9,10 @@ from __future__ import annotations
 
 import asyncio
 import json
-import re
 import sys
 import time
 
-import numpy as np
 import pyaudiowpatch as pyaudio
-import soundfile
 import websockets
 from pycaw.constants import EDataFlow
 from pycaw.utils import AudioUtilities
@@ -78,12 +75,6 @@ def check_devices(s: config.Settings) -> None:
             report("FALLA", "loopback", repr(exc))
 
 
-def check_decoder() -> None:
-    version = soundfile.__libsndfile_version__
-    major, minor = (int(x) for x in re.match(r"(\d+)\.(\d+)", version).groups())
-    report("OK" if (major, minor) >= (1, 1) else "FALLA", "libsndfile (decodifica el MP3 de Edge)", version)
-
-
 def check_camera(s: config.Settings) -> None:
     """Only with RTT_DUB=1: opens the webcam and the driver for a moment, keeps nothing."""
     try:
@@ -111,42 +102,6 @@ async def check_mms(s: config.Settings) -> None:
         report("FALLA", "MMS-TTS", repr(exc)[:200])
 
 
-async def check_pocket(s: config.Settings) -> None:
-    """The first run downloads the model; after that it needs no network."""
-    from interprete.tts.pocket import PocketVoice
-
-    t0 = time.perf_counter()
-    try:
-        voice = PocketVoice(s.pocket_model, s.pocket_voice, 48000, gain_db=s.pocket_gain_db)
-        await voice.start()
-        r = await voice.say("Testing the voice.")
-        report("OK" if r.pcm else "FALLA", "Pocket TTS", f"{s.pocket_model}, {s.pocket_voice}: lista en "
-               f"{time.perf_counter() - t0:.0f} s, frase en {r.t_ready - r.t_request:.2f} s")
-    except Exception as exc:
-        report("AVISO" if s.tts_backup == "edge" else "FALLA", "Pocket TTS", repr(exc)[:200])
-
-
-async def check_edge(s: config.Settings) -> None:
-    from interprete.tts.edge import synthesize
-
-    trouble = "AVISO" if s.tts_engine == "pocket" else "FALLA"       # only the backup: the call can go on
-    try:
-        r = await asyncio.wait_for(synthesize("Testing the voice.", s.tts_voice, 48000), 6.0)
-        x = np.frombuffer(r.pcm, "<i2")
-        report("OK" if len(x) else trouble, "Edge TTS", f"{s.tts_voice}, primer byte {r.t_first - r.t_request:.2f} s")
-    except Exception as exc:
-        report(trouble, "Edge TTS", repr(exc)[:200])
-
-
-async def check_tts(s: config.Settings) -> None:
-    if s.tts_engine == "mms":
-        await check_mms(s)
-    if s.tts_engine == "pocket":
-        await check_pocket(s)
-    if s.tts_engine == "edge" or s.tts_backup == "edge":
-        await check_edge(s)
-
-
 async def check_meta(key: str) -> None:
     try:
         r = await Spark(key, timeout_s=8.0).translate("La entrevista comienza ahora.")
@@ -169,11 +124,9 @@ async def check_meta(key: str) -> None:
 async def main() -> int:
     s = config.load()
     check_devices(s)
-    if "edge" in (s.tts_engine, s.tts_backup):
-        check_decoder()
     if s.dub:
         check_camera(s)
-    await check_tts(s)
+    await check_mms(s)
     if s.api_key:
         report("OK", "MODEL_API_KEY")
         await check_meta(s.api_key)

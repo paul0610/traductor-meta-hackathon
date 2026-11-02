@@ -56,9 +56,6 @@ def load_model(model: str, threads: int) -> Callable[[str, float], np.ndarray]:
 
 
 class MmsVoice:
-    reconnects = 0
-    warning = ""
-
     def __init__(self, model: str, out_rate: int, *, speaking_rate: float = SPEAKING_RATE, threads: int = THREADS,
                  load: Callable = load_model) -> None:
         self.model = model
@@ -96,7 +93,7 @@ class MmsVoice:
         peak = float(np.abs(y).max()) if len(y) else 1.0
         y = y * min(1.0, FULL_SCALE / max(peak, 1e-6))
         pcm = (y * 32767.0).astype("<i2").tobytes()
-        return TtsResult(pcm, self.out_rate, len(y) / self.out_rate, t_request, t_end, t_end, now(), 0.0, lead, tail, 0)
+        return TtsResult(pcm, self.out_rate, len(y) / self.out_rate, t_request, t_end, t_end, now(), lead, tail)
 
-    async def say(self, text: str, *, rate_pct: int = 0, on_hedge: Callable[[], None] | None = None) -> TtsResult:
+    async def say(self, text: str, *, rate_pct: int = 0) -> TtsResult:
         return await asyncio.to_thread(self._synth, text, rate_pct, now())

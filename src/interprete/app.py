@@ -17,14 +17,12 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import importlib.util
 import json
 import os
 import sys
 import time
 from contextlib import nullcontext
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 import numpy as np
 import openai
@@ -53,14 +51,11 @@ from .policy.consecutivo import Consecutive
 from .policy.incremental import Incremental
 from .policy.scheduler import MT_TIMEOUT_S, TTS_TIMEOUT_S, Scheduler
 from .safety import ExitGuard, Watchdog
-from .tts.backup import local_voice, make_voice
+from .tts.mms import MmsVoice
 from .tts.shaping import FAST_RATE_PCT
 from .turns.floor import Floor
 from .ui.status import Phase, health, metrics_line, running
 from .video.virtual_cam import VirtualCam
-
-if TYPE_CHECKING:
-    from .tts.own_voice import Enrollment
 
 MT_ERRORS = (TimeoutError, openai.APIError, json.JSONDecodeError, KeyError)
 LANGUAGE_BIAS = ["en", "es"]    # this order keeps the most Spanish inside English speech, and pure Spanish stays intact
@@ -73,12 +68,11 @@ SYNC_LATE_STREAK = 3
 WORKERS = 2                     # concurrent Spark calls and syntheses, outgoing
 OFF_HOLD_S = 2.0                # the windows close with the process: APAGADO has to be seen first
 POLICIES = {"consecutive": Consecutive, "incremental": Incremental}
-NOTICE_EN = ("Hi, a quick note before we start: I speak Spanish and you are hearing an AI interpreter{own}. "
+NOTICE_EN = ("Hi, a quick note before we start: I speak Spanish and you are hearing an AI interpreter. "
              "It runs a few seconds behind me, so please give me a moment after you finish speaking.")
-NOTICE_DUB_EN = ("Hi, a quick note before we start: I speak Spanish and you are hearing an AI interpreter{own}. My video "
+NOTICE_DUB_EN = ("Hi, a quick note before we start: I speak Spanish and you are hearing an AI interpreter. My video "
                  "reaches you about {n} seconds late so it stays in sync with the voice, so please give me a moment "
                  "after you finish speaking.")
-NOTICE_OWN_EN = " speaking with a synthetic copy of my voice"
 SIM_LINES = [
     ("Buenos días, gracias por recibirme.", "Good morning, thanks for having me."),
     ("Tengo cinco años de experiencia en datos.", "I have five years of experience in data."),
@@ -120,7 +114,7 @@ class Outgoing:
             self.mixer.dub(self.delay, settings.voice_under_db)
         self.rest = self.mixer.rest
         self.sched = Scheduler(self.mixer, self.delay_s, emit=self._on_sched)
-        self.voice = make_voice(settings, self.mixer.rate, size=WORKERS + 1, emit=self.emit)   # one spare socket
+        self.voice = MmsVoice(settings.mms_model, self.mixer.rate, speaking_rate=settings.mms_speaking_rate)
         self.watchdog = Watchdog(self.mixer, self.sched, emit=self.emit)
         self.mic = MicCapture(settings.mic_name, emit=self.emit)
         self.q_pcm: asyncio.Queue = asyncio.Queue(maxsize=QUEUE_BLOCKS)
@@ -329,15 +323,12 @@ class Outgoing:
             if self.sched.is_cancelled(c.utterance_id) or self.sched.resolved(c.seq):
                 self.sched.tombstone(c.seq, "cancelled")
                 continue
-            def on_hedge() -> None:
-                self.emit("tts", channel="out", seq=c.seq, utterance_id=c.utterance_id, hedged=True)
-
             catch_up = self.behind(c, now())
             src_s = None if c.t_src_end is None else c.t_src_end - c.t_src_start
             rate_pct = FAST_RATE_PCT if catch_up else self.voice.rate_for(c.text_tgt, src_s)
             try:
-                r = await asyncio.wait_for(self.voice.say(c.text_tgt, rate_pct=rate_pct, on_hedge=on_hedge), TTS_TIMEOUT_S)
-            except Exception as exc:                 # network, decode, timeout: never stall the queue
+                r = await asyncio.wait_for(self.voice.say(c.text_tgt, rate_pct=rate_pct), TTS_TIMEOUT_S)
+            except Exception as exc:                 # whatever it is: never stall the queue
                 self.sched.tombstone(c.seq, f"tts:{type(exc).__name__}")
                 self.emit("tts", channel="out", seq=c.seq, utterance_id=c.utterance_id, error=f"{type(exc).__name__}: {exc}"[:300])
                 continue
@@ -401,7 +392,7 @@ class Outgoing:
         notes = " │ ASR CAÍDO" if self.asr is not None and self.asr.t_down is not None else ""
         if self.incoming is not None and self.incoming.asr is not None and self.incoming.asr.t_down is not None:
             notes += " │ SUBTÍTULOS CAÍDOS"
-        notes += f"{self.cable_warning}{self.video_warning}{self.voice.warning}"
+        notes += f"{self.cable_warning}{self.video_warning}"
         if not self.metrics.ok:
             notes += " │ SIN MÉTRICAS"
         line = metrics_line(lags=self.lags, sync_s=self.sync_err, delay_s=self.delay_s,
@@ -413,24 +404,10 @@ class Outgoing:
 
     def ready_line(self) -> str:
         dub = f"DOBLAJE D {self.delay_s:.1f}s" if self.delay_s > 0 else "SIN DOBLAJE"
-        return f"LISTO │ {dub} │ {self.voice.name}{self.voice.warning}"
+        return f"LISTO │ {dub} │ {self.voice.name}"
 
     def connected(self) -> bool:
         return not self.opening and (self.asr is None or self.asr.clock.session_id is not None)
-
-    @property
-    def cloned(self) -> bool:
-        local = local_voice(self.voice)
-        return local is not None and local.own
-
-    def enrollment(self) -> Enrollment | None:
-        local = local_voice(self.voice)
-        if local is None:
-            return None
-        from .tts.own_voice import Enrollment, Store
-
-        return Enrollment(local, Store(), self.settings.pocket_voice, self.settings.mic_name, emit=self.emit,
-                          on_voice=lambda: self.ui.bar(self.ready_line()))
 
     async def controller(self) -> None:
         """TTS → rest once idle, watchdog, overlay line: all need the scheduler, so none lives in the callback."""
@@ -455,8 +432,7 @@ class Outgoing:
             return
         t = now()
         seq = self.policy.take_seq()
-        own = NOTICE_OWN_EN if self.cloned else ""
-        text = NOTICE_DUB_EN.format(n=round(self.delay_s), own=own) if self.delay_s > 0 else NOTICE_EN.format(own=own)
+        text = NOTICE_DUB_EN.format(n=round(self.delay_s)) if self.delay_s > 0 else NOTICE_EN
         self.submit_commit(Commit(utterance_id=f"out:notice:{seq}", commit_id=0, seq=seq, channel=Channel.OUT,
                                   text_src="(aviso inicial)", prefix_src="", boundary="notice",
                                   t_src_start=t - self.delay_s, t_src_end=None, t_src_source="notice", t_commit=t,
@@ -512,7 +488,7 @@ class Outgoing:
             if r["t_src_source"] != "notice":        # no ASR or Spark behind it: it would flatter the latency
                 self.emit("commit", phase="report", channel="out", **r)
         self.emit("run", seq_skipped=self.sched.seq_skipped, cable_gaps=self.mixer.cable_gaps,
-                  watchdog_trips=self.watchdog.trips, mode=self.args.mode, tts_reconnects=self.voice.reconnects,
+                  watchdog_trips=self.watchdog.trips, mode=self.args.mode,
                   tts_voice=self.voice.name, yields=self.yields, delay_s=self.delay_s, voice_under_db=self.settings.voice_under_db if self.delay_s > 0 else None,
                   delay_jumps=self.delay.jumps if self.delay is not None else 0,
                   mic_lost_s=round(self.mic.lost_s, 3), mic_overflows=self.mic.overflows,
@@ -752,12 +728,7 @@ class App:
             self.ui.phase(Phase.READY)
             self.ui.bar(self.out.ready_line() if self.out is not None else "LISTO")
             self.ui.mine("Listo. Nada sale de esta PC hasta que pulses el botón.")
-            enrollment = self.out.enrollment() if self.out is not None else None
-            if enrollment is not None:
-                self.ui.offer(enrollment)
             await self.ui.go(self.stop)
-            if enrollment is not None:
-                enrollment.close()
         if self.stop.is_set():
             self.ui.phase(Phase.STOPPING)
             self.ui.bar("Apagado")
@@ -780,10 +751,8 @@ class App:
         for c in self.chains:
             for name, coro in c.tasks().items():
                 self._task(name, coro)
-        if self.out is not None and (self.args.notice or (self.out.cloned and not self.args.no_overlay)):
-            self.out.send_notice()                   # a clone sounds like me: the other side is told before it hears it
-            if self.out.cloned:
-                self.ui.mine("Suena el aviso de que es una copia de tu voz. Habla cuando termine.")
+        if self.args.notice and self.out is not None:
+            self.out.send_notice()
         if self.args.simulate:
             self._task("out.simulate", self.out.simulate(self.on_f9))
         if self.args.wav_out or self.args.wav_in:
@@ -832,9 +801,6 @@ def preflight(args, settings: config.Settings) -> None:
     """What a fresh machine lacks ends here, in one line, before any window opens."""
     if not args.simulate:
         config.require_api_key()
-    for engine in {settings.tts_engine, settings.tts_backup} - {"mms", "none"}:
-        if importlib.util.find_spec(f"{engine}_tts") is None:
-            raise SystemExit(f"The {engine} voice is not part of this build: use RTT_TTS_ENGINE=mms, or run uv sync --extra pocket.")
     if not devices.candidates(settings.cable_name, "output"):
         raise SystemExit(f"No audio output named {settings.cable_name!r}: install VB-CABLE from https://vb-audio.com/Cable/, "
                          "restart Windows and run this again.")

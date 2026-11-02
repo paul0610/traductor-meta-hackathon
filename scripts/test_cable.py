@@ -24,7 +24,7 @@ from interprete.clock import now
 from interprete.contracts import Channel, PcmChunk
 from interprete.metrics.jsonl import Metrics
 from interprete.policy.scheduler import Scheduler
-from interprete.tts.backup import make_voice
+from interprete.tts.mms import MmsVoice
 
 PHRASES = [
     "Good morning, thanks for having me today.",
@@ -57,7 +57,7 @@ async def main() -> None:
     print(f"cable: {mixer.device.name} [{mixer.device.hostapi}] {mixer.rate} Hz")
 
     # 1) voice timings
-    voice = make_voice(settings, mixer.rate, size=1, emit=metrics.emit)
+    voice = MmsVoice(settings.mms_model, mixer.rate, speaking_rate=settings.mms_speaking_rate)
     await voice.start()
     results = []
     for text in PHRASES:
