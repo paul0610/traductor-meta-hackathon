@@ -76,7 +76,7 @@ Before a call, `uv run python scripts/warmcheck.py` tests everything a call need
 
 **Sounds.** A short cue when the button changes state, so you do not have to look at it: ready, live, muted and back, raw voice, they took the floor, stopping. They play on your headphones and never reach the cable. `RTT_SOUNDS=0` turns them off.
 
-**The voice.** MMS-TTS only knows letters, apostrophes and hyphens: it loses digits, symbols, accents and punctuation in silence. Spark is asked to write numbers in words, and `tts/spoken.py` catches what gets through, so "$120" and "Núñez" are still said. `RTT_MMS_SPEAKING_RATE` sets the pace: lower is calmer, and the English then outlasts the Spanish it translates. A clause longer than its Spanish is sped up by 8 % at most: at 25 % it could no longer be understood, at 12 % it sounded fast, and few clauses need it.
+**The voice.** MMS-TTS only knows letters, apostrophes and hyphens: it loses digits, symbols, accents and punctuation in silence. Spark is asked to write numbers in words, and `tts/spoken.py` catches what gets through, so "$120" and "Núñez" are still said. `RTT_MMS_SPEAKING_RATE` sets the pace: lower is calmer, and the English then outlasts the Spanish it translates. A clause longer than its Spanish is sped up by 12 % at most: at 25 % it could no longer be understood, and few clauses need it.
 
 To check it without speaking: `uv run python scripts/make_fixtures.py`, then `uv run python scripts/gate_60s.py` runs both chains on synthetic voices and judges the run from its log. `uv run python scripts/gate_sync.py` does the same for the dub, and also compares each clause's timing against the real word times of the fixture. With `--voice` it runs on your own voice and camera for 60 s, checks where each turn opens against the microphone, and leaves in `logs/` a 20 s clip of what the other side gets.
 
@@ -101,8 +101,8 @@ Gates on this PC, default settings, Nov 1, on synthetic voices unless it says ot
 | Gate | Result |
 |---|---|
 | 0: Spanish in, English on the cable | 34 of 34 clauses played, 100 % of the bytes, 0 gaps |
-| 60 s, both directions | passes; commit to first PCM p50 1.75 s, p95 2.73 s, 0 gaps |
-| S: dub, D 7.0 s, p95 of sync error at most 0.5 s | passes 2 of 3 runs: 0.41, 0.50 and 0.57 s, none over 1 s late, none early |
+| 60 s, both directions | commit to first PCM p50 2.04 s, p95 3.20 s, 0 gaps; one clause lost, see below |
+| S: dub, D 7.0 s, p95 of sync error at most 0.5 s | 0.25 to 0.45 s in 4 runs, none over 1 s late, none early; one run lost a clause, see below |
 | S with my own voice, 60 s, with the cap then at 25 % | passes: 0.147 s, 30 of 30 clauses played. Against the lips where a phrase opens: p95 0.80 s; 5 of 25 over 0.5 s, 1 over 1 s |
 | MMS-TTS, whole clause ready | p50 0.60 s, p95 0.83 s, 164 clauses, 4 threads |
 

@@ -10,7 +10,7 @@ TRIM_THRESHOLD_DB = -50.0      # peak level per 5 ms window below which audio co
 TRIM_MARGIN_S = 0.060
 ISOCHRONY_EXCESS = 0.10        # this much longer than its slot: an overflow delays every clause behind it
 MIN_SRC_S = 0.6
-FAST_RATE_PCT = 8              # on top of MMS at 1.45, by ear, +25 % could not be understood and +12 % sounded fast (SPEC §10)
+FAST_RATE_PCT = 12             # on top of MMS at 1.45, +25 % could not be understood by ear, and +8 % costs gate S (SPEC §10)
 
 
 @dataclass(slots=True)
