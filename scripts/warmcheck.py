@@ -86,7 +86,7 @@ def check_camera(s: config.Settings) -> None:
         open_virtual_camera().close()
         report("OK", "cámara virtual", "driver de OBS disponible; elige OBS Virtual Camera en la llamada")
     except RuntimeError as exc:
-        report("FALLA", "cámara virtual", f"{exc}. Instala OBS Studio una vez: winget install OBSProject.OBSStudio")
+        report("FALLA", "cámara virtual", f"{exc} (winget install OBSProject.OBSStudio)")
 
 
 async def check_mms(s: config.Settings) -> None:

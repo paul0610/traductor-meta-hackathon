@@ -74,13 +74,16 @@ def title_card(delay_s: float, width: int = WIDTH, height: int = HEIGHT) -> np.n
 
 def dshow_index(name_sub: str) -> int:
     """Index OpenCV's DirectShow backend gives the camera whose name contains `name_sub`."""
-    r = subprocess.run(["ffmpeg", "-hide_banner", "-list_devices", "true", "-f", "dshow", "-i", "dummy"],
-                       capture_output=True, text=True, encoding="utf-8", errors="replace")
+    try:
+        r = subprocess.run(["ffmpeg", "-hide_banner", "-list_devices", "true", "-f", "dshow", "-i", "dummy"],
+                           capture_output=True, text=True, encoding="utf-8", errors="replace")
+    except FileNotFoundError:
+        raise RuntimeError("ffmpeg is not on the PATH, and the dub finds the webcam through it: winget install Gyan.FFmpeg") from None
     names = re.findall(r'"([^"]+)" \(video\)', r.stderr)
     for i, name in enumerate(names):
         if name_sub.lower() in name.lower():
             return i
-    raise RuntimeError(f"no camera matching {name_sub!r} among {names}")
+    raise RuntimeError(f"no camera matching {name_sub!r} among {names}: set RTT_CAMERA_NAME to part of yours")
 
 
 def open_webcam(name_sub: str, width: int = WIDTH, height: int = HEIGHT, fps: int = FPS):
@@ -113,7 +116,10 @@ def measure_webcam(name_sub: str, seconds: float = 2.0) -> float:
 def open_virtual_camera(width: int = WIDTH, height: int = HEIGHT, fps: int = FPS):
     import pyvirtualcam
 
-    return pyvirtualcam.Camera(width, height, fps, fmt=pyvirtualcam.PixelFormat.BGR, backend="obs")
+    try:
+        return pyvirtualcam.Camera(width, height, fps, fmt=pyvirtualcam.PixelFormat.BGR, backend="obs")
+    except RuntimeError as exc:
+        raise RuntimeError(f"{exc}: the dub needs OBS Studio installed once, for its virtual camera driver") from exc
 
 
 class VirtualCam:

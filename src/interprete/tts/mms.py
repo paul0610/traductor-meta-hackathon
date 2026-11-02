@@ -28,11 +28,11 @@ SPEAKING_RATE = 1.45           # forty characters in 1.95 s, as the voice gate S
 DURATION_NOISE = 0.0           # its default, 0.8, makes a clause 6 % longer on average and no more predictable
 FULL_SCALE = 0.99
 WARM_TEXT = "Good morning, thanks for having me."
-PACE = {                       # speaking rate: seconds per character and per clause, trimmed, 58 clauses
-    1.0: (0.0532, 0.30),
-    1.15: (0.0509, 0.25),
-    1.3: (0.0460, 0.26),
-    1.45: (0.0426, 0.24),
+PACE = {                       # speaking rate: seconds per character as spoken() leaves the text, and per clause; 58 clauses
+    1.0: (0.0549, 0.29),
+    1.15: (0.0522, 0.25),
+    1.3: (0.0477, 0.24),
+    1.45: (0.0434, 0.23),
 }
 
 
@@ -43,7 +43,7 @@ def load_model(model: str, threads: int) -> Callable[[str, float], np.ndarray]:
 
     logging.disable_progress_bar()
     torch.set_num_threads(threads)
-    revision = REVISIONS[model]
+    revision = REVISIONS.get(model)            # another model in RTT_MMS_MODEL runs unpinned
     tokenizer = AutoTokenizer.from_pretrained(model, revision=revision)
     net = VitsModel.from_pretrained(model, revision=revision, use_safetensors=True).eval()
     net.noise_scale_duration = DURATION_NOISE

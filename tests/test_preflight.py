@@ -1,3 +1,4 @@
+import asyncio
 import os
 import subprocess
 import sys
@@ -49,6 +50,18 @@ def test_without_the_cable_it_says_where_to_get_it(monkeypatch):
     monkeypatch.setattr(devices, "candidates", lambda *a: [])
     with pytest.raises(SystemExit, match="vb-audio.com"):
         app.preflight(SimpleNamespace(simulate=False), settings())
+
+
+def test_a_voice_that_does_not_load_says_why_and_stops(capsys):
+    events, said = [], []
+    run = SimpleNamespace(emit=lambda ev, **f: events.append((ev, f)), ui=SimpleNamespace(mine=said.append),
+                          stop=asyncio.Event(), voice_error=None)
+    app.App.voice_failed(run, OSError("no route to huggingface.co.\nCheck your connection"))
+    line = capsys.readouterr().err.strip()
+    assert run.stop.is_set() and "\n" not in line and "internet" in line and "huggingface.co" in line
+    assert events == [("state", {"what": "fatal", "task": "voice",
+                                 "error": "OSError: no route to huggingface.co. Check your connection"})]
+    assert said and run.voice_error
 
 
 def test_a_mic_that_is_not_here_is_named(monkeypatch):

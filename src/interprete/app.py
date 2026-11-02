@@ -189,8 +189,8 @@ class Outgoing:
         except (RuntimeError, OSError) as exc:
             self.video_warning = " │ SIN CÁMARA RETRASADA"
             self.emit("video", error=repr(exc)[:300])
-            print(f"AVISO: sin cámara retrasada, el otro lado ve tus labios {self.delay_s:.1f} s antes que la voz. "
-                  f"¿OBS Studio instalado? {exc}", file=sys.stderr)
+            print(f"AVISO: sin cámara retrasada, el otro lado ve tus labios {self.delay_s:.1f} s antes que la voz: {exc}",
+                  file=sys.stderr)
             return
         finally:
             self.opening = False
@@ -609,6 +609,7 @@ class App:
         self.tasks: list[asyncio.Task] = []
         self.guard = ExitGuard(self.cleanup, lambda: self.loop.call_soon_threadsafe(self.stop.set))
         self.restored = True
+        self.voice_error: str | None = None
 
     @property
     def chains(self) -> list:
@@ -683,6 +684,15 @@ class App:
         except (*MT_ERRORS, EmptyTranslation) as exc:
             self.emit("state", what="spark_warm", error=f"{type(exc).__name__}: {exc}"[:300])
 
+    def voice_failed(self, exc: Exception) -> None:
+        """It is the only voice and nothing stands behind it: say why, in one line, and stop."""
+        self.voice_error = " ".join(f"{type(exc).__name__}: {exc}".split())[:300]     # Hugging Face's errors span lines
+        self.emit("state", what="fatal", task="voice", error=self.voice_error)
+        print(f"The English voice did not load ({self.voice_error}). The first run downloads it from Hugging Face, "
+              "so it needs internet once.", file=sys.stderr)
+        self.ui.mine("No se pudo cargar la voz. La primera vez se descarga y necesita internet.")
+        self.stop.set()
+
     async def load(self) -> None:
         if self.out is not None:                     # first: two voices in one call is worse than a later start
             self.ui.mine("Cargando la voz…")
@@ -724,14 +734,18 @@ class App:
         await asyncio.wait((loading, stopped), return_when=asyncio.FIRST_COMPLETED)
         stopped.cancel()
         if not self.stop.is_set():
-            await loading
-            self.ui.phase(Phase.READY)
-            self.ui.bar(self.out.ready_line() if self.out is not None else "LISTO")
-            self.ui.mine("Listo. Nada sale de esta PC hasta que pulses el botón.")
-            await self.ui.go(self.stop)
+            try:
+                await loading
+            except Exception as exc:
+                self.voice_failed(exc)
+            else:
+                self.ui.phase(Phase.READY)
+                self.ui.bar(self.out.ready_line() if self.out is not None else "LISTO")
+                self.ui.mine("Listo. Nada sale de esta PC hasta que pulses el botón.")
+                await self.ui.go(self.stop)
         if self.stop.is_set():
             self.ui.phase(Phase.STOPPING)
-            self.ui.bar("Apagado")
+            self.ui.bar("Apagado" if self.voice_error is None else "Apagado: no se pudo cargar la voz")
             loading.cancel()
             await asyncio.gather(loading, return_exceptions=True)
             if self.out is not None:

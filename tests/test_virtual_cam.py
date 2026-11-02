@@ -12,6 +12,15 @@ def frame(v):
     return np.full((2, 2, 3), v, np.uint8)
 
 
+def test_without_ffmpeg_it_says_so(monkeypatch):
+    def missing(*a, **k):
+        raise FileNotFoundError("ffmpeg")
+
+    monkeypatch.setattr(virtual_cam.subprocess, "run", missing)
+    with pytest.raises(RuntimeError, match="ffmpeg is not on the PATH"):
+        dshow_index("HD UVC")
+
+
 def test_pick_gives_the_newest_frame_at_least_d_old_and_drops_older_ones():
     d = FrameDelay(5.0)
     for t in (1.0, 2.0, 3.0):

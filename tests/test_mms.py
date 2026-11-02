@@ -6,6 +6,7 @@ import numpy as np
 
 from interprete.tts.mms import PACE, RATE, WARM_TEXT, MmsVoice
 from interprete.tts.shaping import FAST_RATE_PCT
+from interprete.tts.spoken import spoken
 
 OUT = 48000
 
@@ -45,7 +46,7 @@ def test_start_warms_up_on_a_clause():
     model = FakeModel()
     v = voice(model, threads=3)
     assert model.loaded == ("facebook/mms-tts-eng", 3)
-    assert model.calls[0][0] == WARM_TEXT
+    assert model.calls[0][0] == spoken(WARM_TEXT)
     assert v.name == "mms:mms-tts-eng"
 
 
