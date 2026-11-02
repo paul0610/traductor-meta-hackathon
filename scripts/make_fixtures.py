@@ -50,6 +50,19 @@ SPANGLISH = [         # English that falls into Spanish where the speaker gets s
     "I want this position because I like working with clients, {sobre todo con clientes de otros países.}",
     "If you have questions about the, the {base de datos,} I can show you a real example.",
 ]
+DEMO = [             # the session behind `python -m interprete.replay`: they ask in English, I answer in Spanish
+    ("en", "Hi, thanks for joining us today. Could you tell me a little about yourself?"),
+    ("es", "Buenos días, gracias por recibirme. Tengo cinco años de experiencia construyendo sistemas de datos para "
+           "empresas medianas, y en mi último trabajo reduje el tiempo de los reportes de dos días a veinte minutos."),
+    ("en", "That's impressive. What was the hardest part of that project?"),
+    ("es", "Lo más difícil no fue la parte técnica, sino coordinar a tres equipos que nunca habían trabajado juntos. "
+           "Aprendí a escuchar primero y después proponer."),
+    ("en", "Great. Do you have any questions for us?"),
+    ("es", "Sí, me gustaría saber cómo es un día normal en el equipo, y qué esperan lograr en los primeros seis meses."),
+]
+DEMO_LEAD_S = 1.0
+DEMO_AFTER_THEM_S = 1.5        # I answer once they finish
+DEMO_AFTER_ME_S = 6.0          # they wait for my English, which trails my Spanish by a few seconds
 EN = [
     "Hello, thanks for joining us today.",
     "Could you tell me a little about your background and what you are working on right now?",
@@ -114,14 +127,45 @@ def build(lines: list[str], language: str, speakers: dict[str, Speaker], pause_s
     return (np.clip(np.concatenate(pcm), -1, 1) * 32767).astype("<i2").tobytes(), words
 
 
+def build_demo(speakers: dict[str, Speaker]) -> tuple[bytes, bytes]:
+    """The interview as two tracks of one length: what I say on one, what they say on the other, never at once.
+
+    After my turn they wait for my English to end, so the replay shows turns, not collisions.
+    """
+    tracks = {"es": [], "en": []}
+    t = DEMO_LEAD_S
+    for lang, line in DEMO:
+        start = int(t * RATE)
+        y = []
+        for _, text in stretches(line):
+            x, _ = speakers[lang].say(text, 1.0)
+            y += [trim_silence(x, RATE)[0], np.zeros(int(RATE * COMMA_S), np.float32)]
+        tracks[lang].append((start, np.concatenate(y)))
+        t += sum(len(part) for part in y) / RATE + (DEMO_AFTER_ME_S if lang == "es" else DEMO_AFTER_THEM_S)
+    total = int(t * RATE)
+    out = []
+    for lang in ("es", "en"):
+        x = np.zeros(total, np.float32)
+        for start, y in tracks[lang]:
+            x[start:start + len(y)] = y
+        out.append((np.clip(x, -1, 1) * 32767).astype("<i2").tobytes())
+    return out[0], out[1]
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--pause-es", type=float, default=0.8, help="silence between lines of the monologue, seconds")
     ap.add_argument("--pause-en", type=float, default=2.5, help="silence between the other side's turns, seconds")
     ap.add_argument("--only", default=None, help="build just this fixture")
+    ap.add_argument("--demo", action="store_true", help="only the interview behind demo/, as logs/demo_es.wav and demo_en.wav")
     args = ap.parse_args()
     logging.disable_progress_bar()
     speakers = {lang: Speaker(model) for lang, model in MODELS.items()}
+    if args.demo:
+        for lang, pcm in zip(("es", "en"), build_demo(speakers)):
+            save_wav(Path("logs") / f"demo_{lang}.wav", pcm)
+        print(f"logs/demo_es.wav, logs/demo_en.wav: {len(pcm) / 2 / RATE:.1f} s, {len(DEMO)} turns")
+        return
     for name, lines, language, pause, rate in (("fixture_es", ES, "es", args.pause_es, 1.0),
                                                ("fixture_es_fast", ES, "es", args.pause_es, 1.35),
                                                ("fixture_spanglish", SPANGLISH, "en", args.pause_es, 1.0),

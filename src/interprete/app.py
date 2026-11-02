@@ -713,7 +713,14 @@ class App:
         if self.out is not None and self.args.wav_out:
             jobs.append(replay(read_wav(self.args.wav_out), self.out.q_pcm, self.stop, self.out.fixture_tap()))
         if self.inc is not None and self.args.wav_in:
-            jobs.append(replay(read_wav(self.args.wav_in), self.inc.q_pcm, self.stop))
+            started: list[float] = []
+
+            def tap_in(t_capture: float, pcm: bytes) -> None:   # where their track starts, for the replay
+                if not started:
+                    started.append(t_capture)
+                    self.emit("state", what="fixture_start_in", t_start=t_capture)
+
+            jobs.append(replay(read_wav(self.args.wav_in), self.inc.q_pcm, self.stop, tap_in))
         await asyncio.gather(*jobs)
         await asyncio.sleep(4.0)                     # the sender fills silence: the last turn closes
         t_end = now() + 15.0
