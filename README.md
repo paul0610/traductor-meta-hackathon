@@ -51,18 +51,18 @@ Honest notes:
 
 ## See it in 5 minutes
 
-Needs Python 3.13 and [uv](https://docs.astral.sh/uv/), on Windows, macOS or Linux; Linux also needs PortAudio (`sudo apt install libportaudio2`). No key, no VB-CABLE, no OBS.
+This plays a recorded session again: a short job interview with **synthetic voices on both sides** (Meta's MMS-TTS), not a real call. The listening and translating were done by the real Muse Voice Transcribe and Muse Spark when it was recorded, on Nov 2. No key, no VB-CABLE, no OBS:
 
 ```
 uv sync --locked
 uv run python -m interprete.replay
 ```
 
-It replays a short job interview recorded on Nov 2 through the real chain: the interviewer asks in English and I answer in Spanish, both voices synthetic, Meta's MMS-TTS. You hear the interviewer, my Spanish 14 dB lower, and the English interpretation, which MMS-TTS makes again on your PC at the moments the run produced it. The band at the bottom of the screen shows the interviewer's words in Spanish, and my Spanish with its English. Nothing reaches Meta's API: the listening and translating were done when it was recorded, and [`demo/interview/about.json`](demo/interview/about.json) says when, with which commit, and what that run measured. The first run downloads the voice, about 150 MB; the replay itself takes a little over a minute.
+The interviewer asks in English and I answer in Spanish. You hear the interviewer, my Spanish 14 dB lower, and the English interpretation, which MMS-TTS makes again on your computer at the moments the run produced it. The band at the bottom of the screen shows the interviewer's words in Spanish, and my Spanish with its English. Nothing reaches Meta's API, and [`demo/interview/about.json`](demo/interview/about.json) says when it was recorded, with which commit, and what that run measured. The first run downloads the voice, about 150 MB; the replay itself takes a little over a minute.
 
 `--no-overlay` prints the subtitles in the console instead, and `--wav out.wav` writes the audio to a file instead of the speakers. `scripts/export_session.py` turns any run's log into a session like this one. Replay is `python -m interprete.replay`; to go live, see the next section.
 
-Tested on Windows. It has not been run on macOS or Linux; a test checks that it imports without any Windows-only module.
+It needs Python 3.13 and [uv](https://docs.astral.sh/uv/), on Windows; macOS 14 or later on Apple silicon; or Linux x86_64 with glibc 2.34 or later, such as Ubuntu 22.04 or Debian 12, plus PortAudio (`sudo apt install libportaudio2`). PyTorch publishes nothing for Intel Macs, and the screen library nothing for older systems. Tested on Windows. For macOS and Linux, a dry run of the locked install finds every package and a test checks that the replay imports without any Windows-only module, but the replay itself has not been run there yet.
 
 ## Run it live
 
