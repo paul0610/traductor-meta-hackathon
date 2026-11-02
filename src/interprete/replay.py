@@ -19,6 +19,7 @@ import argparse
 import asyncio
 import json
 import os
+import signal
 import sys
 import threading
 import wave
@@ -356,19 +357,31 @@ def main(argv: list[str] | None = None) -> int:
     session = load(Path(args.session))
     print(describe(session), flush=True)
     if args.no_overlay:
-        return asyncio.run(_run(session, ConsoleUi(), args))
+        ui, loop = ConsoleUi(), asyncio.new_event_loop()
+    else:
+        from PySide6.QtCore import QTimer
+        from PySide6.QtWidgets import QApplication
+        from qasync import QEventLoop
 
-    from PySide6.QtWidgets import QApplication
-    from qasync import QEventLoop
+        from .ui.overlay import Overlay
 
-    from .ui.overlay import Overlay
-
-    qt = QApplication([sys.argv[0]])
-    overlay = Overlay()
-    overlay.show()
-    loop = QEventLoop(qt)
+        qt = QApplication([sys.argv[0]])
+        ui = Overlay()
+        ui.show()
+        timer = QTimer()                            # lets Python run signal handlers while Qt sleeps
+        timer.timeout.connect(lambda: None)
+        timer.start(200)
+        loop = QEventLoop(qt)
     asyncio.set_event_loop(loop)
-    return loop.run_until_complete(_run(session, overlay, args))
+    task = loop.create_task(_run(session, ui, args))
+    # Ctrl-C cancels the replay. As a KeyboardInterrupt, Qt printed it inside a callback and played on, and
+    # asyncio.run waited for a voice still loading. Nothing closes the loop: __main__ ends the process.
+    signal.signal(signal.SIGINT, lambda *_: loop.call_soon_threadsafe(task.cancel))
+    try:
+        return loop.run_until_complete(task)
+    except asyncio.CancelledError:
+        print("Stopped.", flush=True)
+        return 0
 
 
 if __name__ == "__main__":
