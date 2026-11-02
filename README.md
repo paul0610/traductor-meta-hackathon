@@ -100,13 +100,13 @@ Gates on this PC, default settings, Nov 1, on synthetic voices unless it says ot
 
 | Gate | Result |
 |---|---|
-| 0: Spanish in, English on the cable | 32 of 32 clauses played, 100 % of the bytes, 0 gaps |
+| 0: Spanish in, English on the cable | 34 of 34 clauses played, 100 % of the bytes, 0 gaps |
 | 60 s, both directions | commit to first PCM p50 2.04 s, p95 3.20 s, 0 gaps; one clause lost, see below |
-| S: dub, D 7.0 s, p95 of sync error at most 0.5 s | 0.25 to 0.39 s in 3 runs, none over 1 s late, none early; one run lost a clause, see below |
+| S: dub, D 7.0 s, p95 of sync error at most 0.5 s | 0.25 to 0.45 s in 4 runs, none over 1 s late, none early; one run lost a clause, see below |
 | S with my own voice, 60 s | passes: 0.147 s, 30 of 30 clauses played. Against the lips where a phrase opens: p95 0.80 s; 5 of 25 over 0.5 s, 1 over 1 s |
 | MMS-TTS, whole clause ready | p50 0.60 s, p95 0.83 s, 164 clauses, 4 threads |
 
-Known limits. When a clause is late it is because the English before it ran long, not because the voice or Spark were slow: late clauses were ready 1.4 s or more before their turn. A last word the clause before already translated can hold Spark past its limit; the listener misses nothing, but the gates count that clause as lost. Telling Spark it may answer nothing was worse: p95 went from 1.60 to 2.40 s and it dropped real clauses.
+Known limits. When a clause is late it is because the English before it ran long, not because the voice or Spark were slow: late clauses were ready 1 s or more before their turn. A last word the clause before already translated can hold Spark past its limit; the listener misses nothing, but the gates count that clause as lost. Telling Spark it may answer nothing was worse: p95 went from 1.60 to 2.40 s and it dropped real clauses.
 
 Reproduce them with `scripts/make_fixtures.py`, then `scripts/gate_60s.py` and `scripts/gate_sync.py`.
 
