@@ -330,3 +330,13 @@ def test_a_place_on_a_screen_that_is_gone_is_ignored(qt, tmp_path, monkeypatch):
     far._dragged = True
     far.mouseReleaseEvent(None)
     assert Button().pos() == home
+
+
+def test_the_guide_stays_until_the_button_clears_it(qt):
+    o = band(qt)
+    o.guide(["Pick <b>OBS Virtual Camera</b>.", "Nothing leaves this PC."])
+    assert o._guide.isVisibleTo(o) and "<b>OBS Virtual Camera</b>" in o._guide.text()
+    o._go_away()
+    assert o._fade.endValue() == 1.0
+    o.guide([])
+    assert not o._guide.isVisibleTo(o)

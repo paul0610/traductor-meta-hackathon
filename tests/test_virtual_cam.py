@@ -92,6 +92,37 @@ def test_the_card_goes_out_until_a_frame_is_old_enough_then_the_delayed_video():
     assert cap.released and out.closed
 
 
+def test_open_sends_the_card_before_any_webcam_and_start_keeps_the_same_driver():
+    outs, cap = [], FakeCap()
+
+    def make_output():
+        outs.append(FakeOut())
+        return outs[-1]
+
+    v = VirtualCam(0.05, lambda: False, make_webcam=lambda name: cap, make_output=make_output, card=CARD)
+    v.open()
+    wait_for(lambda: len(outs[0].sent) >= 3)
+    assert all(f is CARD for f in outs[0].sent) and cap.n == 0
+    v.start()
+    wait_for(lambda: any(f is not CARD for f in outs[0].sent))
+    assert len(outs) == 1
+    v.stop()
+    assert cap.released and outs[0].closed
+
+
+def test_the_card_alone_reports_nothing(monkeypatch):
+    monkeypatch.setattr(virtual_cam, "REPORT_EVERY_S", 0.01)
+    seen, out, cap = [], FakeOut(), FakeCap()
+    v = VirtualCam(0.05, lambda: False, emit=lambda ev, **f: seen.append(f), make_webcam=lambda name: cap,
+                   make_output=lambda: out, card=CARD)
+    v.open()
+    wait_for(lambda: len(out.sent) >= 30)
+    assert seen == []
+    v.start()
+    wait_for(lambda: bool(seen))
+    v.stop()
+
+
 def test_live_jumps_to_the_newest_frame_and_coming_back_shows_the_card_again():
     live = threading.Event()
     v, out, cap = make(0.2, live.is_set)

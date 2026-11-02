@@ -98,3 +98,15 @@ def test_the_default_keeps_what_mme_keeps_of_a_long_name(sound):
 def test_the_cable_is_never_the_default_mic(sound):
     sound("CABLE Output (VB-Audio Virtual Cable)", "CABLE Output (VB-Audio Virtual Cable)", "Laptop Mic")
     assert devices.find("", "input", ("CABLE",)).name == "Laptop Mic"
+
+
+def test_before_the_button_it_says_which_camera_to_pick_and_what_each_costs():
+    dub = " ".join(app.camera_guide(7.0, 7.0, camera=True))
+    assert "<b>Camera for this call: OBS Virtual Camera.</b>" in dub and "7 s late" in dub and "RTT_DUB=0" in dub
+    live = " ".join(app.camera_guide(0.0, 7.0, camera=False))
+    assert "<b>Camera for this call: your regular camera.</b>" in live and f"about {app.LIPS_LEAD_S} s" in live
+    assert "RTT_DUB=1" in live
+    broken = " ".join(app.camera_guide(7.0, 7.0, camera=False))
+    assert "did not start" in broken and "lips will move 7 s before" in broken
+    for lines in (app.camera_guide(7.0, 7.0, True), app.camera_guide(0.0, 7.0, False), app.camera_guide(7.0, 7.0, False)):
+        assert lines[-1] == app.READY_EN

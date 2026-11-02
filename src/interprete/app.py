@@ -73,6 +73,8 @@ NOTICE_EN = ("Hi, a quick note before we start: I speak Spanish and you are hear
 NOTICE_DUB_EN = ("Hi, a quick note before we start: I speak Spanish and you are hearing an AI interpreter. My video "
                  "reaches you about {n} seconds late so it stays in sync with the voice, so please give me a moment "
                  "after you finish speaking.")
+READY_EN = "Nothing leaves this PC until you click the round button."
+LIPS_LEAD_S = 5                 # first word to its English with no dub: p50 5.0 s in a real call, Nov 2
 SIM_LINES = [
     ("Buenos días, gracias por recibirme.", "Good morning, thanks for having me."),
     ("Tengo cinco años de experiencia en datos.", "I have five years of experience in data."),
@@ -85,6 +87,26 @@ def dub_delay(args, settings: config.Settings) -> float:
     if args.delay is not None:
         return args.delay
     return settings.delay_s if args.dub else 0.0
+
+
+def camera_guide(delay_s: float, dub_s: float, camera: bool) -> list[str]:
+    """Before the button, in English: which camera to pick in the call, and what each one costs."""
+    if delay_s <= 0:
+        return ["<b>Camera for this call: your regular camera.</b> Keep it in your call.",
+                f"It is live, but your lips move about {LIPS_LEAD_S} s before the English voice.",
+                f"For lip sync, set RTT_DUB=1 in .env, restart and pick OBS Virtual Camera: your video goes out "
+                f"{round(dub_s)} s late, with the voice.",
+                READY_EN]
+    n = round(delay_s)
+    if not camera:
+        return ["<b>OBS Virtual Camera did not start.</b> Install OBS Studio once, keep it closed, and restart.",
+                f"Until then, keep your regular camera: your lips will move {n} s before the English voice.",
+                READY_EN]
+    return ["<b>Camera for this call: OBS Virtual Camera.</b> Pick it in your call's camera settings.",
+            f"Your video goes out {n} s late, so your lips move with the English voice; they see and hear you {n} s late.",
+            f"Your regular camera stays live, but your lips lead the English by about {LIPS_LEAD_S} s: "
+            "set RTT_DUB=0 in .env and restart.",
+            READY_EN]
 
 
 class NoUi:
@@ -177,25 +199,50 @@ class Outgoing:
               f"{self.mixer.channels} ch, state {self.mixer.state.value}", file=sys.stderr)
         self.check_cable_level()
 
+    async def open_camera(self) -> None:
+        """At LISTO, so the call can pick OBS Virtual Camera before the button: it shows the card, nothing is captured."""
+        if self.delay_s <= 0 or self.args.wav_out or self.video is not None or self.video_warning:
+            return
+        video = VirtualCam(self.delay_s + self.settings.av_offset_ms / 1000, lambda: self.mixer.live,
+                           name_sub=self.settings.camera_name, emit=self.emit)
+        try:
+            await asyncio.to_thread(video.open)
+        except (RuntimeError, OSError) as exc:
+            self.no_video(exc)
+            return
+        self.video = video
+
     async def start_video(self) -> None:
         """Off the loop: the webcam takes seconds, and the ASR connects meanwhile.
 
         Without the delayed camera the dub still runs, but the lips lead the voice by D, so the bar says so.
         """
-        video = VirtualCam(self.delay_s + self.settings.av_offset_ms / 1000, lambda: self.mixer.live,
-                           name_sub=self.settings.camera_name, emit=self.emit)
         try:
-            await asyncio.to_thread(video.start)
-        except (RuntimeError, OSError) as exc:
-            self.video_warning = " │ SIN CÁMARA RETRASADA"
-            self.emit("video", error=repr(exc)[:300])
-            print(f"AVISO: sin cámara retrasada, el otro lado ve tus labios {self.delay_s:.1f} s antes que la voz: {exc}",
-                  file=sys.stderr)
-            return
+            await self.open_camera()
+            if self.video is None:
+                return
+            try:
+                await asyncio.to_thread(self.video.start)
+            except (RuntimeError, OSError) as exc:
+                self.video = None
+                self.no_video(exc)
+                return
         finally:
             self.opening = False
-        self.video = video
-        print(f"cámara {self.settings.camera_name} -> OBS Virtual Camera, {video.frames.delay_s:.2f} s tarde", file=sys.stderr)
+        print(f"cámara {self.settings.camera_name} -> OBS Virtual Camera, {self.video.frames.delay_s:.2f} s tarde",
+              file=sys.stderr)
+
+    def no_video(self, exc: Exception) -> None:
+        self.video_warning = " │ SIN CÁMARA RETRASADA"
+        self.emit("video", error=repr(exc)[:300])
+        print(f"AVISO: sin cámara retrasada, el otro lado ve tus labios {self.delay_s:.1f} s antes que la voz: {exc}",
+              file=sys.stderr)
+
+    def guide(self) -> list[str]:
+        """What the band says before the button."""
+        if self.args.wav_out:
+            return [READY_EN]
+        return camera_guide(self.delay_s, self.settings.delay_s, self.video is not None)
 
     def check_cable_level(self) -> None:
         """A low Windows slider scales the whole voice before the call app sees it; nothing else would show it."""
@@ -697,6 +744,7 @@ class App:
         if self.out is not None:                     # first: two voices in one call is worse than a later start
             self.ui.mine("Cargando la voz…")
             await self.out.voice.start()
+            await self.out.open_camera()             # LISTO already offers the camera to the call, with the card on it
         if self.spark is not None:
             await self.warm()
 
@@ -748,18 +796,22 @@ class App:
             else:
                 self.ui.phase(Phase.READY)
                 self.ui.bar(self.out.ready_line() if self.out is not None else "LISTO")
-                self.ui.mine("Listo. Nada sale de esta PC hasta que pulses el botón.")
+                self.ui.guide(self.out.guide() if self.out is not None else [READY_EN])
                 await self.ui.go(self.stop)
         if self.stop.is_set():
             self.ui.phase(Phase.STOPPING)
+            self.ui.guide([])
             self.ui.bar("Apagado" if self.voice_error is None else "Apagado: no se pudo cargar la voz")
             loading.cancel()
             await asyncio.gather(loading, return_exceptions=True)
             if self.out is not None:
                 await self.out.voice.close()
+                if self.out.video is not None:
+                    await asyncio.to_thread(self.out.video.stop)
             await self.shut()
             return
         self.ui.phase(Phase.STARTING)
+        self.ui.guide([])
         self.ui.bar("Conectando…")
         await asyncio.sleep(0.05)                    # opening the devices holds the screen 2 s: the press has to show first
         for c in self.chains:

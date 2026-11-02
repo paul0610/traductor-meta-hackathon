@@ -18,13 +18,13 @@ Work in progress during the hackathon week. Daily logs with measured numbers liv
 | Incoming chain: loopback → ASR → Spark → subtitles | done, measured on real system audio |
 | Safety: silent rest state, F9 latch, F10 via Core Audio, watchdog, restore on exit | done, physical keys pending |
 | Incremental clause commits (LA-2), both directions | done, measured on synthetic voices |
-| Synchronized dub with fixed delay D | done; measured on synthetic voices and with my own voice (gate S passed, 30 of 30 clauses), picture and sound calibrated with real claps (+23 ms); a real call still to do |
+| Synchronized dub with fixed delay D | done; measured on synthetic voices and with my own voice (gate S passed, 30 of 30 clauses), picture and sound calibrated with real claps (+23 ms); tried in a Google Meet call with my phone as the other side, Nov 2 |
 | Spanglish: English that falls into Spanish comes out as one English voice | done and measured on a synthetic voice; the ASR sometimes drops whole Spanish passages |
 | Turns: their sustained speech takes the floor from my voice | done, measured with both fixtures talking over each other |
 | Context: the whole conversation and a glossary reach Spark | done, measured on latency and on ambiguous clauses |
 | One-button widget and draggable metrics line | done, used with a real mouse and real keys on the real windows; F7 and F10 not pressed, not yet used in a call |
 | Replay of a recorded session: no key, no VB-CABLE, no OBS | done and tested on Windows; macOS and Linux not run |
-| Meta end to end: MMS-TTS on this PC is the voice | done, judged by ear and measured with a real voice; a real call still to do |
+| Meta end to end: MMS-TTS on this PC is the voice | done, judged by ear and measured with a real voice; heard on a phone through Google Meet, Nov 2 |
 
 ## How it works (short)
 
@@ -96,7 +96,7 @@ Before a call, `uv run python scripts/warmcheck.py` tests everything a call need
 
 To check it without speaking: `uv run python scripts/make_fixtures.py`, then `uv run python scripts/gate_60s.py` runs both chains on synthetic voices and judges the run from its log. `uv run python scripts/gate_sync.py` does the same for the dub, and also compares each clause's timing against the real word times of the fixture. With `--voice` it runs on your own voice and camera for 60 s, checks where each turn opens against the microphone, and leaves in `logs/` a 20 s clip of what the other side gets.
 
-**Synchronized dub** (`RTT_DUB=1` or `--dub`): the other side gets my video and voice D seconds late, so the English voice starts and stops with my lips. Needs OBS Studio installed once for its virtual camera driver, and OBS itself stays closed. It also needs ffmpeg on the PATH (`winget install Gyan.FFmpeg`), which finds the webcam by name. Set `RTT_CAMERA_NAME` to part of your webcam's name. Pick `OBS Virtual Camera` in the call. Run `uv run python scripts/calibrate_av_offset.py` once: it prints the offset between picture and voice, and you put it in `RTT_AV_OFFSET_MS`. The self-view shows the delayed video, and with a shared screen the cursor runs D seconds ahead of the voice, so turn the dub off to share.
+**Synchronized dub** (`RTT_DUB=1` or `--dub`): the other side gets my video and voice D seconds late, so the English voice starts and stops with my lips. Needs OBS Studio installed once for its virtual camera driver, and OBS itself stays closed. It also needs ffmpeg on the PATH (`winget install Gyan.FFmpeg`), which finds the webcam by name. Set `RTT_CAMERA_NAME` to part of your webcam's name. Pick `OBS Virtual Camera` in the call: it is there from `LISTO`, showing a card, so you can pick it before you click, and the webcam opens only with the click. Until then the band says, in English, which camera to pick and what each one costs. Run `uv run python scripts/calibrate_av_offset.py` once: it prints the offset between picture and voice, and you put it in `RTT_AV_OFFSET_MS`. The self-view shows the delayed video, and with a shared screen the cursor runs D seconds ahead of the voice, so turn the dub off to share.
 
 **Level on the cable.** Windows has two sliders that scale everything the call hears: the one on `CABLE Input`, and the one it keeps for each app in the volume mixer, which it remembers between runs. The bar shows `CABLE 22 %` or `PYTHON 3 %` if either is low.
 
@@ -112,7 +112,7 @@ Dependencies are pinned exactly and locked (`uv.lock`), resolved with a supply-c
 
 Every run writes one JSONL line per event to `logs/` (fields in SPEC §4). Numbers are reported per day in `docs/log/`.
 
-Gates on this PC, default settings, on synthetic voices unless it says otherwise, Lima time. A real call is still to come here. Spark's latency changes from day to day, p95 1.4 to 1.9 s on Nov 1 and 2.3 to 3.3 s on Nov 2, so every number says when it was measured.
+Gates on this PC, default settings, on synthetic voices unless it says otherwise, Lima time. Two calls on Nov 2 went through Google Meet with my phone as the other side, muted, so they measure only my direction. Spark's latency changes from day to day, p95 1.4 to 1.9 s on Nov 1 and 2.3 to 3.3 s on Nov 2, so every number says when it was measured.
 
 | Gate | When | Result |
 |---|---|---|
@@ -123,6 +123,8 @@ Gates on this PC, default settings, on synthetic voices unless it says otherwise
 | S with my own voice, 60 s, with the cap then at 25 % | Nov 1, 19:28, single run | passes: 0.147 s, 30 of 30 clauses played. Against the lips where a phrase opens: p95 0.80 s; 5 of 25 over 0.5 s, 1 over 1 s |
 | MMS-TTS, whole clause ready | Nov 1, 164 clauses over 5 runs | p50 0.60 s, p95 0.83 s, 4 threads |
 | The interview in `demo/` | Nov 2, 08:12, single run | 18 of 18 English clauses played, 0 gaps; their subtitles p50 2.90 s after each phrase |
+| Google Meet call, my voice, no dub | Nov 2, 15:46, 10 min | 212 of 213 clauses played; first word of a phrase to its English p50 5.0 s, p95 6.8 s; end of a phrase to it p50 3.7 s |
+| Google Meet call, my voice, dub with D 7.0 s | Nov 2, 16:46, 2 min | 42 clauses, p95 of sync error 0.54 s, video 7.04 s late; the webcam gave 7.5 frames per second there, against 30 in the pre-call check |
 
 Known limits. When a clause is late it is because the English before it ran long, not because the voice or Spark were slow: late clauses were ready 1 s or more before their turn. A last word the clause before already translated can hold Spark past its limit; the listener misses nothing, but the gates count that clause as lost. Telling Spark it may answer nothing was worse: p95 went from 1.60 to 2.40 s and it dropped a real clause.
 

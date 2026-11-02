@@ -3,8 +3,10 @@
 The other side has to see my lips start when the English voice starts, so the video
 waits exactly as long as the audio. One thread reads the webcam into a deque of
 `(t_capture, frame)`, another sends the newest frame at least D old. Until a frame is
-that old a title card goes out, never black. OBS itself never runs: only its driver
-is used, and an open OBS with its own virtual camera would block ours.
+that old a title card goes out, never black. The sending thread starts at LISTO, so the
+call can pick the camera before anything is captured; the webcam opens with the button.
+OBS itself never runs: only its driver is used, and an open OBS with its own virtual
+camera would block ours.
 
 `is_live` is read on every frame, so F9 cuts audio and video to live at the same
 time. Coming back the history is dropped, as the audio does: it was already seen.
@@ -142,20 +144,29 @@ class VirtualCam:
         self.sent = 0
         self.lag_s = 0.0
 
-    def start(self) -> None:
-        """Raises if the driver or the webcam are missing, before any thread exists."""
+    def open(self) -> None:
+        """The driver with the card on it, so the call can pick this camera already. Raises before any thread exists."""
+        if self._out is not None:
+            return
+        if self._card is None:
+            self._card = title_card(self.delay_s)
         self._out = self._make_output()
+        self._spawn(self._send, "video-out")
+
+    def start(self) -> None:
+        """The webcam behind the card. One that fails closes the driver too: no camera is left showing only the card."""
+        self.open()
         try:
             self._cap = self._make_webcam(self.name_sub)
         except Exception:
-            self._out.close()
+            self.stop()
             raise
-        if self._card is None:
-            self._card = title_card(self.delay_s)
-        self._threads = [threading.Thread(target=self._capture, name="video-in", daemon=True),
-                         threading.Thread(target=self._send, name="video-out", daemon=True)]
-        for th in self._threads:
-            th.start()
+        self._spawn(self._capture, "video-in")
+
+    def _spawn(self, target: Callable[[], None], name: str) -> None:
+        th = threading.Thread(target=target, name=name, daemon=True)
+        self._threads.append(th)
+        th.start()
 
     def stop(self) -> None:
         self._stop.set()
@@ -196,7 +207,8 @@ class VirtualCam:
             self.sent += 1
             self._out.sleep_until_next_frame()
             if t >= t_report:
-                self._emit("video", fps_in=(self.read - read0) / REPORT_EVERY_S, fps_out=(self.sent - sent0) / REPORT_EVERY_S,
-                           lag_s=self.lag_s, delay_s=self.delay_s, frames=len(self.frames), live=live)
+                if self._cap is not None:            # the card alone, before the button, is nothing to report
+                    self._emit("video", fps_in=(self.read - read0) / REPORT_EVERY_S, fps_out=(self.sent - sent0) / REPORT_EVERY_S,
+                               lag_s=self.lag_s, delay_s=self.delay_s, frames=len(self.frames), live=live)
                 read0, sent0 = self.read, self.sent
                 t_report = t + REPORT_EVERY_S

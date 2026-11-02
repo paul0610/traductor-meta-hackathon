@@ -1,5 +1,6 @@
 """Subtitle band: what they say (English as it arrives, then Spanish), what I said, what my voice gave up.
 
+Before the button it holds the guide instead: which camera to pick in the call, in English.
 It is as tall as what it has to say and fades away in silence, so the call stays in view.
 Always on top, click-through and never takes focus, so the call app keeps the keyboard.
 `hide_from_capture` keeps it out of screen shares (WDA_EXCLUDEFROMCAPTURE); it is off by
@@ -50,6 +51,7 @@ class Overlay(QWidget):
         font.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing, 1.2)
         self._alert.setFont(font)
         self._alert.setStyleSheet(f"color: {WHITE}; background: {RED}; border-radius: 9px; padding: 2px 14px;")
+        self._guide = self._label(13, WHITE, text_format=Qt.TextFormat.RichText)
         self._src = self._label(13, GREY)
         self._tgt = self._label(21, WHITE, weight=QFont.Weight.DemiBold)
         self._rule = QFrame()
@@ -62,7 +64,7 @@ class Overlay(QWidget):
         layout.setContentsMargins(26, 14, 26, 14)
         layout.setSpacing(6)
         layout.addWidget(self._alert, 0, Qt.AlignmentFlag.AlignHCenter)
-        for w in (self._src, self._tgt, self._rule, self._mine, self._unsaid):
+        for w in (self._guide, self._src, self._tgt, self._rule, self._mine, self._unsaid):
             layout.addWidget(w)
 
         self._fade = QPropertyAnimation(self, b"windowOpacity")
@@ -89,9 +91,10 @@ class Overlay(QWidget):
     def _arrange(self) -> None:
         """Only what has something to say takes room, and the band grows upwards from the same spot."""
         self._alert.setVisible(self._colliding)
-        for w in (self._src, self._tgt, self._mine, self._unsaid):
+        for w in (self._guide, self._src, self._tgt, self._mine, self._unsaid):
             w.setVisible(bool(w.text()))
-        top, bottom = bool(self._src.text() or self._tgt.text()), bool(self._mine.text() or self._unsaid.text())
+        top = bool(self._guide.text() or self._src.text() or self._tgt.text())
+        bottom = bool(self._mine.text() or self._unsaid.text())
         self._rule.setVisible(top and bottom)
         screen = QApplication.primaryScreen()
         if screen is None:
@@ -114,14 +117,14 @@ class Overlay(QWidget):
         self._fade.start()
 
     def _go_away(self) -> None:
-        if self._colliding:                          # what they said and what I left unsaid are still needed
+        if self._colliding or self._guide.text():    # what they said, what I left unsaid, or the guide: still needed
             self._idle.start()
         else:
             self._fade_to(0.0)
 
     def _faded(self) -> None:
         if self._fade.endValue() == 0.0:
-            for w in (self._src, self._tgt, self._mine, self._unsaid):
+            for w in (self._guide, self._src, self._tgt, self._mine, self._unsaid):
                 w.clear()
             self._arrange()
 
@@ -139,6 +142,11 @@ class Overlay(QWidget):
                                                                                        WDA_EXCLUDEFROMCAPTURE))
 
     # --- content (all on the Qt thread: asyncio runs on the same loop through qasync) -----
+
+    def guide(self, lines: list[str]) -> None:
+        """The app's own lines, markup allowed. It stays until the button clears it with no lines."""
+        self._guide.setText("<br>".join(lines))
+        self._changed()
 
     def their_partial(self, text: str) -> None:
         self._src.setText(_tail(text, 180))
