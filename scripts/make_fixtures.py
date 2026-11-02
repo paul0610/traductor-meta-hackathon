@@ -57,7 +57,7 @@ DEMO = [             # the session behind `python -m interprete.replay`: they as
     ("en", "That's impressive. What was the hardest part of that project?"),
     ("es", "Lo más difícil no fue la parte técnica, sino coordinar a tres equipos que nunca habían trabajado juntos. "
            "Aprendí a escuchar primero y después proponer."),
-    ("en", "Great. Do you have any questions for us?"),
+    ("en", "Great, thank you. Do you have any questions for us?"),   # "Great." alone was heard "Brave."
     ("es", "Sí, me gustaría saber cómo es un día normal en el equipo, y qué esperan lograr en los primeros seis meses."),
 ]
 DEMO_LEAD_S = 1.0
