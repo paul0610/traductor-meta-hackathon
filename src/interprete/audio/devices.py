@@ -13,6 +13,7 @@ import sounddevice as sd
 
 HOSTAPI_ORDER = ("Windows WASAPI", "Windows DirectSound", "MME")
 MME_NAME = 31
+HEADPHONE_HINTS = ("auricular", "headphone", "headset", "bose", "airpods", "buds", "audífono", "audifono", "manos libres")
 
 
 @dataclass(frozen=True, slots=True)
@@ -27,6 +28,11 @@ class Device:
     @property
     def is_wasapi(self) -> bool:
         return self.hostapi == "Windows WASAPI"
+
+
+def looks_like_headphones(name: str) -> bool:
+    """A guess from the name: Windows does not say what kind of device an output is."""
+    return any(h in name.lower() for h in HEADPHONE_HINTS)
 
 
 def default_mic() -> str:

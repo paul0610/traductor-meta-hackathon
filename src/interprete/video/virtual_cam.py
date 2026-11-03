@@ -74,14 +74,19 @@ def title_card(delay_s: float, width: int = WIDTH, height: int = HEIGHT) -> np.n
     return card
 
 
-def dshow_index(name_sub: str) -> int:
-    """Index OpenCV's DirectShow backend gives the camera whose name contains `name_sub`."""
+def dshow_cameras() -> list[str]:
+    """Video devices in the order OpenCV's DirectShow backend numbers them, as ffmpeg lists them."""
     try:
         r = subprocess.run(["ffmpeg", "-hide_banner", "-list_devices", "true", "-f", "dshow", "-i", "dummy"],
                            capture_output=True, text=True, encoding="utf-8", errors="replace")
     except FileNotFoundError:
         raise RuntimeError("ffmpeg is not on the PATH, and the dub finds the webcam through it: winget install Gyan.FFmpeg") from None
-    names = re.findall(r'"([^"]+)" \(video\)', r.stderr)
+    return re.findall(r'"([^"]+)" \(video\)', r.stderr)
+
+
+def dshow_index(name_sub: str) -> int:
+    """Index OpenCV's DirectShow backend gives the camera whose name contains `name_sub`."""
+    names = dshow_cameras()
     for i, name in enumerate(names):
         if name_sub.lower() in name.lower():
             return i

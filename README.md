@@ -4,7 +4,7 @@
 
 Track: **Indie Developer** · Theme: **Build for Your World**. I understand English but I am slow to speak it under pressure (interviews, meetings). This is "work in English today", not "learn English".
 
-> **Windows 11 only, and tested there.** Every test, gate and measurement in this README, and the demo video, were made on one Windows 11 Pro PC (build 26200, AMD Ryzen 9 6900HX, 32 GB of RAM), with the voice on the CPU. To run it, follow the [manual](#manual-windows-11): install, check, first call.
+> **Windows 11 only, and tested there.** Every test, gate and measurement in this README, and the demo video, were made on one Windows 11 Pro PC (build 26200, AMD Ryzen 9 6900HX, 32 GB of RAM), with the voice on the CPU. To run it, double-click **`Install.bat`**: Muse Spark guides the setup with tool calls. Then follow the [manual](#manual-windows-11) for your first call.
 
 ## Status
 
@@ -24,12 +24,14 @@ Work in progress during the hackathon week. Daily logs with measured numbers liv
 | Context: the whole conversation and a glossary reach Spark | done, measured on latency and on ambiguous clauses |
 | One-button widget and draggable metrics line | done, and used in the Google Meet calls of Nov 2; F7 and F10 not yet pressed in a call |
 | Meta end to end: MMS-TTS on this PC is the voice | done, judged by ear and measured with a real voice; heard on a phone through Google Meet, Nov 2 |
+| Setup assistant: `Install.bat`, with Muse Spark driving a fixed set of tools | done; run on this PC with real Spark, every change declined, Nov 2; not yet tried on a clean PC |
 
 ## How it works (short)
 
 ```
 OUT: mic ─► Muse Voice Transcribe (es) ─► clause commits ─► Muse Spark (es→en) ─► MMS-TTS (local) ─► scheduler ─► VB-CABLE ─► call app
 IN:  system loopback ─► Muse Voice Transcribe (en) ─► Muse Spark (en→es) ─► subtitle overlay
+SETUP: Install.bat ─► uv sync ─► Muse Spark picks the next tool (tool calling) ─► fixed tools ask you, then act ─► warmcheck
 ```
 
 Design, contracts, clock model and safety rules: [`docs/SPEC.md`](docs/SPEC.md).
@@ -39,7 +41,7 @@ Design, contracts, clock model and safety rules: [`docs/SPEC.md`](docs/SPEC.md).
 | Model | What it does | Where it runs |
 |---|---|---|
 | Muse Voice Transcribe | Hears both sides, with turn and timing events | Meta Model API, cloud |
-| Muse Spark | Translates both ways | Meta Model API, cloud |
+| Muse Spark | Translates both ways, and drives the setup assistant with tool calls | Meta Model API, cloud |
 | MMS-TTS (`facebook/mms-tts-eng`) | Speaks the English | Open weights, on this PC, CPU |
 
 `scripts/make_fixtures.py` also uses `facebook/mms-tts-spa`, for test voices only.
@@ -50,7 +52,7 @@ Honest notes:
 
 ## Manual (Windows 11)
 
-Written so you can repeat on your PC what was tested on mine. The interface speaks Spanish, because its user does: [section 6](#6-controls-and-what-you-see) translates every label. The launcher, the check and this manual speak English.
+Written so you can repeat on your PC what was tested on mine. The interface speaks Spanish, because its user does: [section 6](#6-controls-and-what-you-see) translates every label. The installer, its setup assistant, the launcher, the check and this manual speak English.
 
 1. [What you need](#1-what-you-need)
 2. [Install](#2-install)
@@ -77,7 +79,17 @@ You do not need to speak Spanish: [section 5](#5-try-it-alone) has phrases to re
 
 ### 2. Install
 
-Everything runs in PowerShell: Start, type `PowerShell`, Enter.
+**The quick way: `Install.bat`.**
+
+1. Get the code: on GitHub, *Code › Download ZIP*, and unzip it; or, with Git, `git clone https://github.com/paul0610/traductor-meta-hackathon.git`.
+2. Double-click `Install.bat` in that folder. If Windows warns that the file came from the internet, choose *Run*, or *More info › Run anyway*.
+3. It installs uv with winget, then Python 3.13 and the exact packages in `uv.lock` (about 1 GB the first time), and starts the setup assistant. The assistant asks for your Meta API key first and tries it with a real Muse Spark translation.
+4. **Then Muse Spark drives the setup,** saying at each step what it is doing: it checks VB-CABLE, Windows' microphone permission and the default output, asks whether you want the [dub](#7-synchronized-dub-optional) and installs what it needs, offers a desktop shortcut, and ends with the [check](#3-check-the-setup), explaining each warning. The tools are plain code: Spark only picks the next one, and anything that changes your PC asks you first in the console. If Spark stops answering, the same steps run in a fixed order, and `Install.bat --no-spark` runs them that way from the start.
+5. **VB-CABLE you install yourself, guided.** Its license does not allow other installers to bundle it, so the assistant opens its official page, tells you the one button to click, and checks the result. VB-CABLE then asks you to restart Windows.
+
+Running `Install.bat` again is safe: every step skips what is already done.
+
+**By hand,** the same steps. Everything runs in PowerShell: Start, type `PowerShell`, Enter.
 
 **2.1 uv and Git.** Skip any you already have (`uv --version`, `git --version`).
 
@@ -130,6 +142,8 @@ winget install --id=Gyan.FFmpeg -e
 OBS Studio is there only for its virtual camera driver: leave it closed. FFmpeg finds your webcam by name. Also turn on *Camera access* and *Let desktop apps access your camera* under *Settings › Privacy & security › Camera*. Then open a new PowerShell, so `ffmpeg` is on the PATH, and follow [section 7](#7-synchronized-dub-optional).
 
 ### 3. Check the setup
+
+`Install.bat` runs this check at the end. To run it again, in the project folder:
 
 ```powershell
 uv run python scripts/warmcheck.py
@@ -255,6 +269,7 @@ They live in `.env`, and `.env.example` explains each one. The ones you may need
 
 | You see | Do this |
 |---|---|
+| `Install.bat` stops | Its last line in red says why. Fix that and run it again: every step skips what is already done |
 | `uv is not on the PATH` | Install uv ([step 2.1](#2-install)) and open a new PowerShell |
 | `MODEL_API_KEY is not set` | Create `.env` with your key ([step 2.4](#2-install)) |
 | `No audio output named 'CABLE Input'` | Install VB-CABLE ([step 2.3](#2-install)) and restart Windows |
@@ -274,7 +289,7 @@ Every run writes one JSONL line per event to `logs/`; the console prints the fil
 
 ### 10. Uninstall
 
-- Delete the project folder: it holds the packages, `.env` and `logs/`.
+- Delete the project folder: it holds the packages, `.env` and `logs/`. Delete the desktop shortcut too, `Interprete ES-EN`, if you made one.
 - Delete the voice, in `%USERPROFILE%\.cache\huggingface\hub\models--facebook--mms-tts-eng`.
 - VB-CABLE: run `VBCABLE_Setup_x64.exe` as administrator, click *Remove Driver* and restart Windows.
 - What you installed only for this: `uv cache clean` frees uv's downloads, and then `winget uninstall --id=astral-sh.uv -e`, and the same with `Git.Git`, `OBSProject.OBSStudio` and `Gyan.FFmpeg`.

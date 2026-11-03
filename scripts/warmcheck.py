@@ -25,7 +25,6 @@ from interprete.mt.spark import Spark
 from interprete.tts.mms import MmsVoice
 from interprete.video.virtual_cam import HEIGHT, WIDTH, measure_webcam, open_virtual_camera
 
-HEADPHONE_HINTS = ("auricular", "headphone", "headset", "bose", "airpods", "buds", "audífono", "audifono", "manos libres")
 failures = 0
 
 
@@ -63,7 +62,7 @@ def check_devices(s: config.Settings) -> None:
     out = AudioUtilities.GetSpeakers().FriendlyName or ""
     if "CABLE" in out:
         report("FAIL", "default output", f"{out}: the subtitles would hear your own English. Pick your headphones")
-    elif any(h in out.lower() for h in HEADPHONE_HINTS):
+    elif devices.looks_like_headphones(out):
         report("OK", "default output", out)
     else:
         report("WARN", "default output", f"{out} does not look like headphones: with speakers the mic hears "
