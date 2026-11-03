@@ -1,6 +1,8 @@
 # traductor-meta-hackathon
 
-**OS-level simultaneous interpreter, Spanish ⇄ English, for any video call** (Meet, Zoom, Teams), built on Meta's **Muse Voice Transcribe** (realtime ASR), **Muse Spark** (translation) and **MMS-TTS** (the voice). You speak Spanish, or Spanglish, into your normal microphone and the other side hears fluent English through a virtual microphone. They speak English and you read Spanish subtitles. The call app needs no plugin: it just picks a different microphone.
+**OS-level simultaneous interpreter, Spanish ⇄ English, for any video call**, built on Meta's **Muse Voice Transcribe** (realtime ASR), **Muse Spark** (translation) and **MMS-TTS** (the voice). You speak Spanish, or Spanglish, into your normal microphone and the other side hears fluent English. They speak English and you read Spanish subtitles.
+
+**Any meeting app, one setting.** It runs beside the call app, at the level of Windows, not inside it, so it is meant for all of them: Google Meet, Microsoft Teams, Zoom, Webex, Discord, or any other app that lets you pick a microphone. **The only thing to set in the call app is the microphone: `CABLE Output`**, the virtual microphone that carries the English. No plugin, no extension, and nothing to install on the other side. Your headphones stay as they are: the app subtitles whatever the call plays on them. With the [synchronized dub](#7-synchronized-dub-optional), also pick `OBS Virtual Camera` as the camera. Tested with Google Meet; the others take a microphone the same way, but were not tried.
 
 Track: **Indie Developer** · Theme: **Build for Your World**. I understand English but I am slow to speak it under pressure (interviews, meetings). This is "work in English today", not "learn English".
 
