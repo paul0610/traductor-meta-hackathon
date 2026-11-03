@@ -340,3 +340,15 @@ def test_the_guide_stays_until_the_button_clears_it(qt):
     assert o._fade.endValue() == 1.0
     o.guide([])
     assert not o._guide.isVisibleTo(o)
+
+
+def test_the_meta_panel_paints_each_call_and_ticks_only_while_one_is_out(qt):
+    screen = Screen(meta_panel=True)
+    screen.call_start(("mt", "out", 1), "Muse Spark", "es→en", "Claro")
+    assert screen.panel._tick.isActive()
+    screen.panel.grab()                                   # paints every row without a screen
+    screen.call_end(("mt", "out", 1), "Sure")
+    screen.panel._ticked()
+    assert not screen.panel._tick.isActive()
+    assert screen.calls.rows()[0][0] == "done"
+    assert Screen(meta_panel=False).panel is None

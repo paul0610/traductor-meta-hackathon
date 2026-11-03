@@ -54,6 +54,7 @@ from .safety import ExitGuard, Watchdog
 from .tts.mms import MmsVoice
 from .tts.shaping import FAST_RATE_PCT
 from .turns.floor import Floor
+from .ui.calls import HeardTurn
 from .ui.status import Phase, health, metrics_line, running
 from .video.virtual_cam import VirtualCam
 
@@ -74,6 +75,9 @@ NOTICE_DUB_EN = ("Hi, a quick note before we start: I speak Spanish and you are 
                  "reaches you about {n} seconds late so it stays in sync with the voice, so please give me a moment "
                  "after you finish speaking.")
 READY_EN = "Nothing leaves this PC until you click the round button."
+STD_INPUT_HANDLE = -10
+ENABLE_QUICK_EDIT_MODE = 0x0040
+ENABLE_EXTENDED_FLAGS = 0x0080
 LIPS_LEAD_S = 5                 # first word to its English with no dub: p50 5.0 s in a real call, Nov 2
 SIM_LINES = [
     ("Buenos días, gracias por recibirme.", "Good morning, thanks for having me."),
@@ -131,6 +135,7 @@ class Outgoing:
         self.metrics = metrics
         self.emit = metrics.emit
         self.ui = ui
+        self.heard = HeardTurn(ui, "out", "es")
         self.stop = stop
         self.loop = asyncio.get_running_loop()
         self.mixer = CableMixer(settings.cable_name, emit=self.emit)
@@ -307,8 +312,10 @@ class Outgoing:
     def on_asr_event(self, ev: AsrEvent) -> None:
         if ev.kind is AsrKind.SPEECH_COMPLETE:
             show_call("Muse Voice Transcribe es", ev.text)
+            self.heard.complete(ev.text)
             self.ui.mine(ev.text)
         elif ev.kind is AsrKind.PARTIAL:
+            self.heard.partial(ev.text)
             self.ui.mine(ev.text)
             if self.args.no_overlay:
                 print(f"\r… {ev.text}"[:100].ljust(100), end="", flush=True)
@@ -344,12 +351,15 @@ class Outgoing:
             def on_mt_hedge() -> None:
                 self.emit("mt", channel="out", seq=c.seq, utterance_id=c.utterance_id, hedged=True)
 
+            call = ("mt", "out", c.seq)
+            self.ui.call_start(call, "Muse Spark", "es→en", c.text_src)
             try:
                 r = await asyncio.wait_for(self.spark.translate(c.text_src, prefix=c.prefix_src, history=self.recent(),
                                                                 fragment=self.args.mode == "incremental",
                                                                 context=self.conversation.text(),
                                                                 on_hedge=on_mt_hedge), MT_TIMEOUT_S)
             except EmptyTranslation:                 # only a filler: nothing was lost, there was nothing to say
+                self.ui.call_end(call, "only a filler: nothing to say")
                 self.sched.tombstone(c.seq, "filler")
                 self.emit("mt", channel="out", seq=c.seq, utterance_id=c.utterance_id, filler=True)
                 continue
@@ -357,6 +367,7 @@ class Outgoing:
                 self.sched.tombstone(c.seq, f"mt:{type(exc).__name__}")
                 self.emit("mt", channel="out", seq=c.seq, utterance_id=c.utterance_id, error=f"{type(exc).__name__}: {exc}"[:300])
                 show_call("Muse Spark es→en", f"failed, clause {c.seq} dropped: {type(exc).__name__}")
+                self.ui.call_end(call, f"{type(exc).__name__}: clause dropped", failed=True)
                 continue
             c.text_tgt, c.t_mt, c.mt_calls = r.translation, r.t_end, 1
             self.translated[c.seq] = (c.text_src, c.text_tgt)
@@ -366,6 +377,7 @@ class Outgoing:
                       text_tgt=c.text_tgt, mt_calls_per_commit=1, reasoning_tokens=r.reasoning_tokens,
                       effort=r.effort)
             show_call(f"Muse Spark es→en {r.t_end - r.t_start:4.1f} s", c.text_tgt)
+            self.ui.call_end(call, c.text_tgt)
             self.ui.mine(c.text_src, c.text_tgt)
             await self.q_translated.put(c)
 
@@ -378,12 +390,16 @@ class Outgoing:
             catch_up = self.behind(c, now())
             src_s = None if c.t_src_end is None else c.t_src_end - c.t_src_start
             rate_pct = FAST_RATE_PCT if catch_up else self.voice.rate_for(c.text_tgt, src_s)
+            call = ("tts", c.seq)
+            self.ui.call_start(call, "MMS-TTS, this CPU", "en", c.text_tgt)
             try:
                 r = await asyncio.wait_for(self.voice.say(c.text_tgt, rate_pct=rate_pct), TTS_TIMEOUT_S)
             except Exception as exc:                 # whatever it is: never stall the queue
+                self.ui.call_end(call, f"{type(exc).__name__}: clause dropped", failed=True)
                 self.sched.tombstone(c.seq, f"tts:{type(exc).__name__}")
                 self.emit("tts", channel="out", seq=c.seq, utterance_id=c.utterance_id, error=f"{type(exc).__name__}: {exc}"[:300])
                 continue
+            self.ui.call_end(call, failed=not r.pcm)
             if not r.pcm:
                 self.sched.tombstone(c.seq, "tts:empty")
                 continue
@@ -552,6 +568,7 @@ class Incoming:
         self.args = args
         self.emit = metrics.emit
         self.ui = ui
+        self.heard = HeardTurn(ui, "in", "en")
         self.stop = stop
         self.loop = asyncio.get_running_loop()
         self.q_pcm: asyncio.Queue = asyncio.Queue(maxsize=QUEUE_BLOCKS)
@@ -586,8 +603,10 @@ class Incoming:
         self.floor.on_event(ev)
         if ev.kind is AsrKind.SPEECH_COMPLETE:
             show_call("Muse Voice Transcribe en", ev.text)
+            self.heard.complete(ev.text)
             self.ui.their_final(ev.text)
         elif ev.kind is AsrKind.PARTIAL:
+            self.heard.partial(ev.text)
             self.ui.their_partial(ev.text)
         c = self.policy.on_event(ev)
         if c is not None:
@@ -603,6 +622,8 @@ class Incoming:
             def on_mt_hedge() -> None:
                 self.emit("mt", channel="in", seq=c.seq, utterance_id=c.utterance_id, hedged=True)
 
+            call = ("mt", "in", c.seq)
+            self.ui.call_start(call, "Muse Spark", "en→es", c.text_src)
             try:
                 r = await asyncio.wait_for(self.spark.translate(c.text_src, src="en", tgt="es", prefix=c.prefix_src,
                                                                 history=self.history[-4:],
@@ -610,10 +631,12 @@ class Incoming:
                                                                 context=self.conversation.text(),
                                                                 on_hedge=on_mt_hedge), MT_TIMEOUT_S)
             except EmptyTranslation:
+                self.ui.call_end(call, "only a filler: nothing to say")
                 self.emit("mt", channel="in", seq=c.seq, utterance_id=c.utterance_id, filler=True)
                 self.pending -= 1
                 continue
             except MT_ERRORS as exc:
+                self.ui.call_end(call, f"{type(exc).__name__}: shown untranslated", failed=True)
                 self.ui.their_failed(c.text_src)
                 self.emit("mt", channel="in", seq=c.seq, utterance_id=c.utterance_id, error=f"{type(exc).__name__}: {exc}"[:300])
                 self.pending -= 1
@@ -623,6 +646,7 @@ class Incoming:
             self.turn_text = r.translation if c.commit_id == 0 else f"{self.turn_text} {r.translation}"
             self.ui.their_translation(self.turn_text)
             show_call(f"Muse Spark en→es {r.t_end - r.t_start:4.1f} s", r.translation)
+            self.ui.call_end(call, r.translation)
             row.update(t_mt=r.t_end, t_shown=now(), mt_s=r.t_end - r.t_start, text_tgt=r.translation)
             self.emit("mt", channel="in", seq=c.seq, utterance_id=c.utterance_id, t_mt=r.t_end, mt_s=r.t_end - r.t_start,
                       text_tgt=r.translation, mt_calls_per_commit=1, reasoning_tokens=r.reasoning_tokens, effort=r.effort)
@@ -730,16 +754,20 @@ class App:
 
     async def warm(self) -> None:
         """First Spark call of a process is the slow one (measured: 2.4 s cold, 1.5 s warm)."""
+        self.ui.call_start(("mt", "warm"), "Muse Spark", "es→en", "first call, to warm up: Buenos días.")
         try:
-            await asyncio.wait_for(self.spark.translate("Buenos días."), 5.0)
+            r = await asyncio.wait_for(self.spark.translate("Buenos días."), 5.0)
+            self.ui.call_end(("mt", "warm"), r.translation)
             self.emit("state", what="spark_warm")
         except (*MT_ERRORS, EmptyTranslation) as exc:
+            self.ui.call_end(("mt", "warm"), f"{type(exc).__name__}: the first clause warms it up", failed=True)
             self.emit("state", what="spark_warm", error=f"{type(exc).__name__}: {exc}"[:300])
 
     def voice_failed(self, exc: Exception) -> None:
         """It is the only voice and nothing stands behind it: say why, in one line, and stop."""
         self.voice_error = " ".join(f"{type(exc).__name__}: {exc}".split())[:300]     # Hugging Face's errors span lines
         self.emit("state", what="fatal", task="voice", error=self.voice_error)
+        self.ui.call_end(("tts", "load"), "the voice did not load", failed=True)
         print(f"The English voice did not load ({self.voice_error}). The first run downloads it from Hugging Face, "
               "so it needs internet once.", file=sys.stderr)
         self.ui.mine("No se pudo cargar la voz. La primera vez se descarga y necesita internet.")
@@ -748,7 +776,9 @@ class App:
     async def load(self) -> None:
         if self.out is not None:                     # first: two voices in one call is worse than a later start
             self.ui.mine("Cargando la voz…")
+            self.ui.call_start(("tts", "load"), "MMS-TTS, this CPU", "en", "loading Meta's open weights")
             await self.out.voice.start()
+            self.ui.call_end(("tts", "load"), f"voice ready: {self.settings.mms_model}")
             await self.out.open_camera()             # LISTO already offers the camera to the call, with the card on it
         if self.spark is not None:
             await self.warm()
@@ -909,8 +939,23 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return ap.parse_args(argv)
 
 
+def no_quick_edit(kernel32=None) -> None:
+    """A click in the console starts a selection, and Windows then holds every print until it ends: the chain
+    printing a translation stops with it. Seen on Nov 2, when a click left the voice loading for minutes."""
+    if sys.platform != "win32" and kernel32 is None:
+        return
+    import ctypes
+
+    k32 = kernel32 or ctypes.windll.kernel32
+    stdin = k32.GetStdHandle(STD_INPUT_HANDLE)
+    mode = ctypes.c_uint32()
+    if k32.GetConsoleMode(stdin, ctypes.byref(mode)):
+        k32.SetConsoleMode(stdin, (mode.value | ENABLE_EXTENDED_FLAGS) & ~ENABLE_QUICK_EDIT_MODE)
+
+
 def main() -> None:
     args = parse_args()
+    no_quick_edit()
     preflight(args, config.load())
     if args.no_overlay:
         asyncio.run(run_app(args, NoUi()))
@@ -925,7 +970,8 @@ def main() -> None:
 
     qt = QApplication([sys.argv[0]])
     settings = config.load()
-    screen = Screen(hide_from_capture=settings.overlay_hide_from_capture, sounds=Sounds() if settings.sounds else None)
+    screen = Screen(hide_from_capture=settings.overlay_hide_from_capture, sounds=Sounds() if settings.sounds else None,
+                    meta_panel=settings.meta_panel)
     screen.show()
     timer = QTimer()                                # lets Python run signal handlers while Qt sleeps
     timer.timeout.connect(lambda: None)

@@ -1,9 +1,10 @@
-"""The app's one button, and the metrics line, both on top and free to drag out of the way.
+"""The app's one button, the metrics line and the Meta panel, all on top and free to drag out of the way.
 
 Left click starts from LISTO and stops from then on; right click stops from any state,
 loading included. Stopping restores the microphone. The ring is the health of the lag, the
-number the lag in seconds. Nothing here is a setting: what the app needs from you shows on
-the metrics line. The windows stay where they were dragged, from one run to the next.
+number the lag in seconds. What the app needs from you shows on the metrics line. The Meta
+panel shows each call to Meta's models as it runs (`calls.py`); `RTT_META_PANEL=0` hides it.
+The windows stay where they were dragged, from one run to the next.
 """
 
 from __future__ import annotations
@@ -13,9 +14,10 @@ import ctypes
 from typing import Callable
 
 from PySide6.QtCore import QPoint, QRectF, QSettings, Qt, QTimer
-from PySide6.QtGui import QColor, QFont, QGuiApplication, QPainter, QPen
+from PySide6.QtGui import QColor, QFont, QFontMetrics, QGuiApplication, QPainter, QPen
 from PySide6.QtWidgets import QApplication, QHBoxLayout, QLabel, QWidget
 
+from .calls import COLUMN_X, ROW_CHARS, CallLog
 from .overlay import Overlay
 from .sounds import Sounds
 from .status import Health, Phase, sound_for
@@ -31,6 +33,9 @@ FIXED = {Phase.LOADING: "#6b7280", Phase.READY: "#8fd3ff", Phase.STARTING: "#8fd
 GLYPH = {Phase.LOADING: "…", Phase.STARTING: "…", Phase.PAUSED: "❚❚", Phase.MUTED: "✕", Phase.RAW: "!", Phase.STOPPING: "…",
          Phase.OFF: "■"}
 RUNNING = (Phase.STARTING, Phase.LIVE, Phase.PAUSED, Phase.MUTED, Phase.RAW)
+CALL_COLOR = {"live": "#8fd3ff", "done": "#d6d9de", "failed": "#e5484d"}
+PANEL_PAD = 12
+PANEL_TICK_MS = 200            # the seconds of a call still out count up on screen
 FLAGS = (Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.FramelessWindowHint | Qt.WindowType.Tool
          | Qt.WindowType.WindowDoesNotAcceptFocus)
 
@@ -162,13 +167,65 @@ class MetricsLine(_Floating):
         p.drawRoundedRect(QRectF(self.rect()), 8, 8)
 
 
+class MetaPanel(_Floating):
+    """Meta's models at work, a row per call: one still out counts its seconds until it returns."""
+
+    def __init__(self, calls: CallLog, *, hide_from_capture: bool = False) -> None:
+        super().__init__(hide_from_capture)
+        # Opaque, unlike the others: with per-pixel alpha the windows behind it could be read through it, even at
+        # an alpha of 250, and it sits on the screen the demo video records.
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, False)
+        self.setWindowTitle("Interprete: Meta")
+        self.calls = calls
+        self._font = QFont("Consolas", 10)
+        metrics = QFontMetrics(self._font)
+        self._row = metrics.height() + 3
+        self._char = metrics.horizontalAdvance("M")
+        self.setFixedSize(metrics.horizontalAdvance("M" * ROW_CHARS) + 2 * PANEL_PAD,
+                          (calls.keep + 1) * self._row + 2 * PANEL_PAD)
+        self._tick = QTimer(self)
+        self._tick.setInterval(PANEL_TICK_MS)
+        self._tick.timeout.connect(self._ticked)
+        screen = QApplication.primaryScreen()
+        if screen is not None:
+            g = screen.availableGeometry()
+            self.place(QPoint(g.x() + 24, g.y() + 68))
+
+    def changed(self) -> None:
+        if self.calls.live() and not self._tick.isActive():
+            self._tick.start()
+        self.update()
+
+    def _ticked(self) -> None:
+        if not self.calls.live():
+            self._tick.stop()
+        self.update()
+
+    def paintEvent(self, event) -> None:
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        p.fillRect(self.rect(), QColor(12, 14, 18))
+        p.setFont(self._font)
+        width = self.width() - 2 * PANEL_PAD
+        p.setPen(QColor("#8b93a0"))
+        p.drawText(QRectF(PANEL_PAD, PANEL_PAD, width, self._row), Qt.AlignmentFlag.AlignVCenter,
+                   "META MODELS · LIVE CALLS")
+        for i, (state, cells) in enumerate(self.calls.cells(), 1):
+            p.setPen(QColor(CALL_COLOR[state]))
+            for x, cell in zip(COLUMN_X, cells):
+                p.drawText(QRectF(PANEL_PAD + x * self._char, PANEL_PAD + i * self._row, width, self._row),
+                           Qt.AlignmentFlag.AlignVCenter, cell)
+
+
 class Screen:
     """The windows as one thing for the chains; subtitle calls go straight to the band."""
 
-    def __init__(self, *, hide_from_capture: bool = False, sounds: Sounds | None = None) -> None:
+    def __init__(self, *, hide_from_capture: bool = False, sounds: Sounds | None = None, meta_panel: bool = True) -> None:
         self.overlay = Overlay(hide_from_capture=hide_from_capture)
         self.button = Button(hide_from_capture=hide_from_capture)
         self.metrics = MetricsLine(hide_from_capture=hide_from_capture)
+        self.calls = CallLog()
+        self.panel = MetaPanel(self.calls, hide_from_capture=hide_from_capture) if meta_panel else None
         self.sounds = sounds
 
     def __getattr__(self, name: str):
@@ -177,7 +234,25 @@ class Screen:
     def show(self) -> None:
         self.overlay.show()
         self.metrics.show()
+        if self.panel is not None:
+            self.panel.show()
         self.button.show()
+
+    def call_start(self, key: tuple, model: str, route: str = "", text: str = "", *, timed: bool = True) -> None:
+        self.calls.start(key, model, route, text, timed=timed)
+        self._calls_changed()
+
+    def call_update(self, key: tuple, text: str) -> None:
+        self.calls.update(key, text)
+        self._calls_changed()
+
+    def call_end(self, key: tuple, text: str | None = None, *, failed: bool = False) -> None:
+        self.calls.end(key, text, failed=failed)
+        self._calls_changed()
+
+    def _calls_changed(self) -> None:
+        if self.panel is not None:
+            self.panel.changed()
 
     def bar(self, text: str) -> None:
         self.metrics.set_text(text)

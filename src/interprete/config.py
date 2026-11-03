@@ -33,6 +33,7 @@ class Settings:
     camera_name: str
     glossary_path: Path
     sounds: bool
+    meta_panel: bool
 
 
 def load() -> Settings:
@@ -51,6 +52,7 @@ def load() -> Settings:
         camera_name=os.environ.get("RTT_CAMERA_NAME", "HD UVC"),
         glossary_path=Path(os.environ.get("RTT_GLOSSARY", ROOT / "glossary.txt")),
         sounds=os.environ.get("RTT_SOUNDS", "1") == "1",
+        meta_panel=os.environ.get("RTT_META_PANEL", "1") == "1",
     )
 
 

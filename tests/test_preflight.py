@@ -54,7 +54,7 @@ def test_without_the_cable_it_says_where_to_get_it(monkeypatch):
 
 def test_a_voice_that_does_not_load_says_why_and_stops(capsys):
     events, said = [], []
-    run = SimpleNamespace(emit=lambda ev, **f: events.append((ev, f)), ui=SimpleNamespace(mine=said.append),
+    run = SimpleNamespace(emit=lambda ev, **f: events.append((ev, f)), ui=SimpleNamespace(mine=said.append, call_end=lambda *a, **k: None),
                           stop=asyncio.Event(), voice_error=None)
     app.App.voice_failed(run, OSError("no route to huggingface.co.\nCheck your connection"))
     line = capsys.readouterr().err.strip()
@@ -110,3 +110,29 @@ def test_before_the_button_it_says_which_camera_to_pick_and_what_each_costs():
     assert "did not start" in broken and "lips will move 7 s before" in broken
     for lines in (app.camera_guide(7.0, 7.0, True), app.camera_guide(0.0, 7.0, False), app.camera_guide(7.0, 7.0, False)):
         assert lines[-1] == app.READY_EN
+
+
+def test_a_click_in_the_console_cannot_freeze_the_app():
+    """QuickEdit off and everything else as it was: a selection would hold every print."""
+    import ctypes
+
+    class Kernel32:
+        def __init__(self, mode):
+            self.mode, self.set = mode, None
+
+        def GetStdHandle(self, which):
+            return which
+
+        def GetConsoleMode(self, handle, out):
+            ctypes.cast(out, ctypes.POINTER(ctypes.c_uint32)).contents.value = self.mode
+            return 1
+
+        def SetConsoleMode(self, handle, mode):
+            self.set = (handle, mode)
+
+    k = Kernel32(0x01F7)                                   # Windows' default: QuickEdit and insert on, and more
+    app.no_quick_edit(k)
+    handle, mode = k.set
+    assert handle == app.STD_INPUT_HANDLE
+    assert not mode & app.ENABLE_QUICK_EDIT_MODE and mode & app.ENABLE_EXTENDED_FLAGS
+    assert mode | app.ENABLE_QUICK_EDIT_MODE == 0x01F7 | app.ENABLE_EXTENDED_FLAGS

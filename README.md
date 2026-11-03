@@ -44,7 +44,9 @@ Design, contracts, clock model and safety rules: [`docs/SPEC.md`](docs/SPEC.md).
 | Muse Spark (`muse-spark-1.3`) | Translates each clause both ways, with the whole conversation and the glossary; drives the setup assistant with tool calls | Meta Model API, chat completions at `https://api.meta.ai/v1`: structured output with `reasoning_effort` minimal to translate, tools with low in the setup | [`mt/spark.py`](src/interprete/mt/spark.py), [`mt/context.py`](src/interprete/mt/context.py), [`setup/assistant.py`](src/interprete/setup/assistant.py) |
 | MMS-TTS (`facebook/mms-tts-eng`) | Speaks the English | Open weights through `transformers`, on this PC's CPU, 4 threads | [`tts/mms.py`](src/interprete/tts/mms.py) |
 
-Every call shows on the console as it happens, named and timed, such as `Muse Spark es→en  1.2 s │ Sure. In my last project…`, and every run writes each call with its timing to `logs/app_<date>_<time>.jsonl`.
+Every call shows on screen as it runs, in the Meta panel: which model, how long it has been out or how long it took, and what it returned, from the moment the voice starts loading. Blue is a call still out, white one that returned, red one that failed. The console prints the same, such as `Muse Spark es→en  1.2 s │ Sure. In my last project…`, and every run writes each call with its timing to `logs/app_<date>_<time>.jsonl`.
+
+![The Meta panel during a run on the synthetic interview: Muse Voice Transcribe hearing, Muse Spark translating both ways, MMS-TTS speaking on the CPU](docs/img/meta_panel.png)
 
 `scripts/make_fixtures.py` also uses `facebook/mms-tts-spa`, for test voices only.
 
@@ -231,6 +233,8 @@ Your raw voice goes out alone only with F9, or by itself when the ASR is down fo
 
 Problems show on it and stay: `ASR CAÍDO` (ASR down), `SUBTÍTULOS CAÍDOS` (subtitles down), `SIN CÁMARA RETRASADA` (no delayed camera), `SIN MÉTRICAS` (no metrics), or the name of a task that died. `CABLE 22 %` or `PYTHON 3 %` means a Windows volume slider is low: see [Troubleshooting](#9-troubleshooting). With the dub, `TARDE: reinicia con D 7.5` means the voice keeps reaching your lips late: restart with `RTT_DELAY_S=7.5`.
 
+**The Meta panel,** under the metrics line, also draggable: one row per call to Meta's models, the latest at the bottom. Muse Voice Transcribe shows `listening` while it hears a turn and `heard` at its end; Muse Spark and MMS-TTS count their seconds while out, then keep their time and what they returned. It starts with the voice loading and Spark's first call, before the click. `RTT_META_PANEL=0` hides it.
+
 **The subtitle band,** at the bottom of the screen, as tall as what it has to say. What they say in English, in grey, and in Spanish, in white; below, what you said and how it came out. It fades after 9 s of silence, so the call stays in view. If they take the floor while your voice is speaking it says `TE ESTÁN HABLANDO` (they are talking to you), and what your voice did not get to say stays on it in amber, after `Sin decir:` (not said). Before the click it holds the camera guide, in English.
 
 **Sounds.** A short cue on your headphones each time the button changes state, so you do not have to look at it: ready, live, muted and back, raw voice, they took the floor, stopping. The other side never hears them. `RTT_SOUNDS=0` turns them off.
@@ -262,6 +266,7 @@ They live in `.env`, and `.env.example` explains each one. The ones you may need
 | `RTT_VOICE_UNDER_DB` | `-20` | With the dub: your own voice under the English; `-inf` leaves it out |
 | `RTT_MMS_SPEAKING_RATE` | `1.45` | The pace of the English voice; lower is calmer, and the English then outlasts the Spanish |
 | `RTT_SOUNDS` | `1` | `0` silences the cues |
+| `RTT_META_PANEL` | `1` | `0` hides the panel of live calls to Meta's models |
 | `RTT_OVERLAY_HIDE_FROM_CAPTURE` | `0` | `1` keeps the band out of screen shares and recordings |
 | `RTT_GLOSSARY` | `glossary.txt` | You want terms rendered one way: copy `glossary.example.txt` to `glossary.txt` |
 | `RTT_MODE` | `incremental` | `consecutive` waits for whole turns, the reliable fallback |
