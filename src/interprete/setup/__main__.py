@@ -7,7 +7,7 @@ import asyncio
 import subprocess
 import sys
 
-from .. import config
+from .. import config, utf8_output
 from .assistant import drive, fixed_steps
 from .tools import LAUNCHER, Console, Tools, ensure_key, short
 
@@ -24,6 +24,8 @@ def main(argv: list[str] | None = None, console: Console | None = None) -> int:
                                  description="Gets this PC ready for a first call. Anything that changes it asks first.")
     ap.add_argument("--no-spark", action="store_true", help="the same steps in a fixed order, without Muse Spark")
     args = ap.parse_args(argv)
+    if console is None:                      # Spark's own words may carry any character
+        utf8_output()
     console = console or Console()
     console.say("Setup assistant. " + ("Fixed steps, without Muse Spark." if args.no_spark else
                 "Muse Spark picks each step and says why; the steps themselves are fixed code."))

@@ -136,3 +136,18 @@ def test_a_click_in_the_console_cannot_freeze_the_app():
     assert handle == app.STD_INPUT_HANDLE
     assert not mode & app.ENABLE_QUICK_EDIT_MODE and mode & app.ENABLE_EXTENDED_FLAGS
     assert mode | app.ENABLE_QUICK_EDIT_MODE == 0x01F7 | app.ENABLE_EXTENDED_FLAGS
+
+
+def test_console_lines_survive_a_pipe(monkeypatch):
+    """Git Bash or `> log.txt`: Windows' code page has no │ or →, and the first Meta call printed killed its chain."""
+    import io
+
+    from interprete import utf8_output
+
+    raw = io.BytesIO()
+    monkeypatch.setattr(sys, "stdout", io.TextIOWrapper(raw, encoding="cp1252"))
+    monkeypatch.setattr(sys, "stderr", io.TextIOWrapper(io.BytesIO(), encoding="cp1252"))
+    utf8_output()
+    app.show_call("Muse Spark es→en  1.2 s", "Sure, in my last project")
+    sys.stdout.flush()
+    assert "Muse Spark es→en".encode() in raw.getvalue() and "│ Sure, in my last project".encode() in raw.getvalue()

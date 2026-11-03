@@ -18,7 +18,7 @@ import websockets
 from pycaw.constants import EDataFlow
 from pycaw.utils import AudioUtilities
 
-from interprete import config
+from interprete import config, utf8_output
 from interprete.audio import devices
 from interprete.audio.device_restore import endpoint_volume
 from interprete.mt.spark import Spark
@@ -154,4 +154,5 @@ async def main() -> int:
 
 
 if __name__ == "__main__":
+    utf8_output()
     sys.exit(asyncio.run(main()))

@@ -28,7 +28,7 @@ import numpy as np
 import openai
 import soxr
 
-from . import config
+from . import config, utf8_output
 from .asr.meta_realtime import QUEUE_BLOCKS, MetaRealtimeAsr
 from .audio import devices
 from .audio.cable_mixer import CableMixer, State
@@ -1031,6 +1031,7 @@ def no_quick_edit(kernel32=None) -> None:
 
 
 def main() -> None:
+    utf8_output()
     args = parse_args()
     no_quick_edit()
     preflight(args, config.load())
