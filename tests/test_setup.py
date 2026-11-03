@@ -113,6 +113,15 @@ def test_vbcable_is_left_alone_when_the_person_says_no(monkeypatch):
     assert not r["installed"] and person.opened == []
 
 
+def test_a_yes_or_no_question_shows_its_options_once_and_enter_is_no():
+    person = Person("", "sí")
+    t = Tools(person)
+    assert t.call("ask_yes_no", '{"question": "Do you want the synchronized dub?"}') == {"answer": "no"}
+    assert t.call("ask_yes_no", '{"question": "Do you want the dub? (y/n)"}') == {"answer": "yes"}
+    assert "Do you want the synchronized dub? [y/N]" in person.said
+    assert "Do you want the dub? [y/N]" in person.said              # Spark's own "(y/n)" does not show twice
+
+
 def test_the_dub_takes_the_webcam_the_person_picks_never_obs(monkeypatch, tmp_path):
     monkeypatch.setattr(tools, "find_ffmpeg", lambda: "ffmpeg")
     monkeypatch.setattr(virtual_cam, "dshow_cameras",

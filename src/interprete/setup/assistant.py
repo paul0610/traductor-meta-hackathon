@@ -27,7 +27,7 @@ Every call needs: VB-CABLE, the virtual microphone, installed; Windows letting d
 default output that is not CABLE Input. Speakers and headphones both work: on speakers the call goes in turns, the \
 microphone waiting while the PC plays, and headphones let the person talk over the other side. Optional, only if the \
 person wants it: the synchronized dub, which sends their video and voice 7 s late so the English matches their lips. \
-It needs OBS Studio (only its virtual camera driver; OBS itself stays closed), FFmpeg, camera access and a webcam. Ask about the dub with ask_person, in one sentence with its cost. \
+It needs OBS Studio (only its virtual camera driver; OBS itself stays closed), FFmpeg, camera access and a webcam. Ask about the dub with ask_yes_no, in one sentence with its cost. \
 Offer the desktop shortcut. Always end with run_check, then finish.
 
 Rules:
@@ -57,7 +57,10 @@ TOOLS = [
                             "It must not be CABLE Input."),
     _tool("open_settings", "Open a Windows Settings page for the person to change something, and wait until they are done.",
           page={"type": "string", "enum": ["microphone", "camera", "sound"]}),
-    _tool("ask_person", "Ask the person something and return their answer.", question={"type": "string"}),
+    _tool("ask_person", "Ask the person an open question and return their answer. A yes-or-no question goes through "
+                        "ask_yes_no.", question={"type": "string"}),
+    _tool("ask_yes_no", "Ask the person a yes-or-no question and return yes or no. The console shows the options, "
+                        "[y/N], so leave them out of the question; Enter alone is no.", question={"type": "string"}),
     _tool("dub_status", "Is the synchronized dub on, with which camera and delay, and are OBS Studio, its virtual "
                         "camera and FFmpeg ready? Read-only."),
     _tool("dub_install", "Install OBS Studio and FFmpeg with winget, for the dub. Asks first."),

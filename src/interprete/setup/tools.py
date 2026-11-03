@@ -35,8 +35,9 @@ CONSENT = r"Software\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\Co
 WINGET_LINKS = Path(os.environ.get("LOCALAPPDATA", "")) / "Microsoft" / "WinGet" / "Links"
 OBS_EXE = Path(os.environ.get("ProgramFiles", r"C:\Program Files")) / "obs-studio" / "bin" / "64bit" / "obs64.exe"
 NAMES = ("vbcable_status", "vbcable_install", "microphone_access", "camera_access", "default_output", "open_settings",
-         "ask_person", "dub_status", "dub_install", "dub_camera", "shortcut", "run_check", "finish")
+         "ask_person", "ask_yes_no", "dub_status", "dub_install", "dub_camera", "shortcut", "run_check", "finish")
 CABLE_WAIT_S = 10              # VB-CABLE's endpoints show up a few seconds after its installer ends
+OPTIONS = re.compile(r"\s*[(\[]\s*y(?:es)?\s*/\s*n(?:o)?\s*[)\]]\s*$", re.IGNORECASE)     # "(y/n)" written by Spark
 
 
 class Console:
@@ -275,6 +276,11 @@ class Tools:
     def ask_person(self, question: str) -> dict:
         self.console.say(question)
         return {"answer": self.console.ask(">")}
+
+    def ask_yes_no(self, question: str) -> dict:
+        """With its options on screen, [y/N], like every question here. Enter alone is no: nothing goes on without a yes."""
+        question = OPTIONS.sub("", question.strip())           # the console adds them, so they never show twice
+        return {"answer": "yes" if self.console.confirm(question, default=False) else "no"}
 
     def setting(self, name: str, default: str) -> str:
         """As the app will see it: the environment first, then .env."""
