@@ -1,6 +1,6 @@
 """The app's one button, the metrics line and the Meta panel, all on top and free to drag out of the way.
 
-Left click starts from LISTO and stops from then on; right click stops from any state,
+Left click starts from READY and stops from then on; right click stops from any state,
 loading included. Stopping restores the microphone. The ring is the health of the lag, the
 number the lag in seconds. What the app needs from you shows on the metrics line. The Meta
 panel shows each call to Meta's models as it runs (`calls.py`); `RTT_META_PANEL=0` hides it.
@@ -21,6 +21,7 @@ from .calls import COLUMN_X, ROW_CHARS, CallLog
 from .overlay import Overlay
 from .sounds import Sounds
 from .status import Health, Phase, sound_for
+from .texts import t
 
 WDA_EXCLUDEFROMCAPTURE = 0x11
 SIZE = 112
@@ -139,7 +140,7 @@ class Button(_Floating):
         p.drawText(QRectF(0, 18, SIZE, 50), Qt.AlignmentFlag.AlignCenter, self._centre())
         p.setPen(QColor("#b9bec6"))
         p.setFont(QFont("Segoe UI", 8, QFont.Weight.DemiBold))
-        p.drawText(QRectF(0, 66, SIZE, 18), Qt.AlignmentFlag.AlignCenter, self.phase.value)
+        p.drawText(QRectF(0, 66, SIZE, 18), Qt.AlignmentFlag.AlignCenter, t(self.phase.value))
 
 
 class MetricsLine(_Floating):

@@ -1,4 +1,6 @@
-"""What the button and the metrics line show, apart from Qt so the chains can say it and the tests can check it."""
+"""What the button and the metrics line show, apart from Qt so the chains can say it and the tests can check it.
+
+The words are English; `texts.t` gives them in Spanish with RTT_UI_LANG=es."""
 
 from __future__ import annotations
 
@@ -6,24 +8,26 @@ from enum import Enum
 
 import numpy as np
 
+from .texts import t
+
 SYNC_OK_S = 0.5                # gate S
 SYNC_WARN_S = 1.0              # past this a clause counts as late
 LAG_OK_S = 4.0                 # 60 s gate
 LAG_WARN_S = 6.0
-CABLE = {"OFF": "APAGADO", "SILENT": "EN ESPERA", "PASSTHROUGH": "VOZ CRUDA", "TTS": "VOZ", "DUB": "DOBLAJE", "MUTE": "MUDO"}
+CABLE = {"OFF": "OFF", "SILENT": "STANDBY", "PASSTHROUGH": "RAW VOICE", "TTS": "VOICE", "DUB": "DUB", "MUTE": "MUTED"}
 
 
 class Phase(str, Enum):
-    LOADING = "CARGANDO"
-    READY = "LISTO"            # nothing is captured yet: no audio leaves this PC
-    STARTING = "CONECTANDO"    # the ASR and the camera are on their way; what is said meanwhile waits in the queue
-    LIVE = "EN VIVO"
-    LISTENING = "MIC EN ESPERA"   # on speakers the PC is playing, so the mic waits (`audio/room.py`)
-    PAUSED = "PAUSADO"         # they took the floor
-    MUTED = "MUDO"             # F8: nothing reaches the other side
-    RAW = "VOZ CRUDA"          # F9
-    STOPPING = "APAGANDO"
-    OFF = "APAGADO"
+    LOADING = "LOADING"
+    READY = "READY"            # nothing is captured yet: no audio leaves this PC
+    STARTING = "CONNECTING"    # the ASR and the camera are on their way; what is said meanwhile waits in the queue
+    LIVE = "LIVE"
+    LISTENING = "MIC ON HOLD"  # on speakers the PC is playing, so the mic waits (`audio/room.py`)
+    PAUSED = "PAUSED"          # they took the floor
+    MUTED = "MUTED"            # F8: nothing reaches the other side
+    RAW = "RAW VOICE"          # F9
+    STOPPING = "STOPPING"
+    OFF = "OFF"
 
 
 SOUNDS = {Phase.READY: "ready", Phase.LIVE: "live", Phase.PAUSED: "floor", Phase.MUTED: "mute", Phase.RAW: "raw",
@@ -74,6 +78,6 @@ def metrics_line(*, lags: list[float], sync_s: float, delay_s: float, late: bool
     if delay_s > 0:
         sync = f" │ SYNC {sync_s:+.1f}s (D {delay_s:.1f}s)"
         if late:
-            sync += f" TARDE: reinicia con D {delay_s + 0.5:.1f}"
-    return (f"LAG {lag}{sync} │ CORR {corrections} │ TURNO: {'ellos' if theirs else 'yo'} │ ES→EN {CABLE[cable]}{notes}"
-            f" │ META {minutes:.0f} min")
+            sync += " " + t("LATE: restart with D {d:.1f}").format(d=delay_s + 0.5)
+    return (f"LAG {lag}{sync} │ CORR {corrections} │ {t('TURN')}: {t('them') if theirs else t('me')} │ ES→EN "
+            f"{t(CABLE[cable])}{notes} │ META {minutes:.0f} min")

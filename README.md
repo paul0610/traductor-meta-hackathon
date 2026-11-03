@@ -58,12 +58,12 @@ Every call shows on screen as it runs, in the Meta panel: which model, how long 
 Honest notes:
 - **Meta's Model API has no text-to-speech model** (checked against the docs, the live model list and the cookbook on Oct 30), so the voice is Meta's open-weight MMS-TTS on this PC. The voice is plain and single-speaker, chosen because the rules require Meta models end to end. It has no backup: nothing that is not Meta's runs, even when something fails.
 - The interpreter requires Windows 11 and [VB-CABLE](https://vb-audio.com/Cable/).
-- **On speakers the call goes in turns.** The app takes your microphone straight from the device, so the call app's echo cancelling never touches it, and on speakers the mic would hear the other side and the Spanish voice and translate them back. So while the PC plays, and 0.6 s after, the mic hands on silence ([`audio/room.py`](src/interprete/audio/room.py)) and the button says `MIC EN ESPERA`: what you say then is lost, so speak on `EN VIVO`. The loopback's level says when, against the quietest moment of the last 5 s, so a steady hum on their side does not keep the mic shut. Headphones need none of it and let you talk over the other side: the app goes in turns unless the default output is named like headphones, and `RTT_SPEAKERS` decides by hand. Full duplex on speakers would need echo cancelling against the loopback: not done.
+- **On speakers the call goes in turns.** The app takes your microphone straight from the device, so the call app's echo cancelling never touches it, and on speakers the mic would hear the other side and the Spanish voice and translate them back. So while the PC plays, and 0.6 s after, the mic hands on silence ([`audio/room.py`](src/interprete/audio/room.py)) and the button says `MIC ON HOLD`: what you say then is lost, so speak on `LIVE`. The loopback's level says when, against the quietest moment of the last 5 s, so a steady hum on their side does not keep the mic shut. Headphones need none of it and let you talk over the other side: the app goes in turns unless the default output is named like headphones, and `RTT_SPEAKERS` decides by hand. Full duplex on speakers would need echo cancelling against the loopback: not done.
 - **Their words in Spanish cost a little of what they say.** The Spanish voice plays where the app listens, on the default output, so while it speaks, and 0.4 s after, the app hears nothing: what they say in that moment gets neither a subtitle nor a voice. In a call of questions and answers it rarely matters; F6 turns the voice off, and `RTT_VOICE_IN=0` starts without it. It never talks over you either: a clause that would start after you began answering, or more than 6 s after they said it, is only read.
 
 ## Manual (Windows 11)
 
-Written so you can repeat on your PC what was tested on mine. The interface speaks Spanish, because its user does: [section 6](#6-controls-and-what-you-see) translates every label. The installer, its setup assistant, the launcher, the check and this manual speak English.
+Written so you can repeat on your PC what was tested on mine. The interface speaks English, like the installer, its setup assistant, the launcher, the check and this manual. `RTT_UI_LANG=es` puts the interface in Spanish, for its Spanish-speaking user; the subtitles are Spanish either way, since they are the translation.
 
 1. [What you need](#1-what-you-need)
 2. [Install](#2-install)
@@ -166,17 +166,17 @@ Two more checks, optional: `uv run python scripts/test_cable.py` plays five Engl
 
 ### 4. Your first call
 
-1. **Start it.** Double-click `Interprete.bat` in the project folder. A console opens, and a round button appears at the top right of the screen, saying `CARGANDO` (loading) for about 20 s.
-2. **Wait for `LISTO`** (ready). Nothing is captured yet. The band at the bottom of the screen says which camera to pick in the call.
+1. **Start it.** Double-click `Interprete.bat` in the project folder. A console opens, and a round button appears at the top right of the screen, saying `LOADING` for about 20 s.
+2. **Wait for `READY`.** Nothing is captured yet. The band at the bottom of the screen says which camera to pick in the call.
 3. **Set up the call before you click:**
    - Microphone: `CABLE Output (VB-Audio Virtual Cable)`, unmuted, with noise cancellation off.
    - Speakers: your speakers or headphones, the Windows default output.
    - Camera: your usual one, or `OBS Virtual Camera` with the dub.
 
    In Google Meet they are under *More options › Settings*, in *Audio* and *Video*.
-4. **Click the button.** It says `CONECTANDO` (connecting), then `EN VIVO` (live). Speak Spanish: the other side hears English about 5 s after you start each phrase, and under 4 s after you end it. The console shows each step as it happens: `[es]` is what Muse Voice Transcribe heard, `[en]` what Muse Spark made of it. On speakers the button says `MIC EN ESPERA` while the call or the Spanish voice plays: speak when it says `EN VIVO` again.
+4. **Click the button.** It says `CONNECTING`, then `LIVE`. Speak Spanish: the other side hears English about 5 s after you start each phrase, and under 4 s after you end it. The console names each Meta call as it happens: `Muse Voice Transcribe es │ …` is what it heard, and `Muse Spark es→en  1.2 s │ …` what Spark made of it, and how long it took. On speakers the button says `MIC ON HOLD` while the call or the Spanish voice plays: speak when it says `LIVE` again.
 5. **When they speak English,** the band shows their words in grey and the Spanish in white, and right after each subtitle you hear it in Spanish, unless you have already started to answer. F6 turns that voice off and on.
-6. **To finish,** let the English end first, about 5 s after your last word (7 s with the dub), and click the button. It stops on `APAGADO` (off), and if `CABLE Output` had become the Windows default microphone, it puts yours back. A right click stops it from any state, and so does Ctrl-C in the console. The console then prints a summary of the run and the path of its log in `logs/`.
+6. **To finish,** let the English end first, about 5 s after your last word (7 s with the dub), and click the button. It stops on `OFF`, and if `CABLE Output` had become the Windows default microphone, it puts yours back. A right click stops it from any state, and so does Ctrl-C in the console. The console then prints a summary of the run and the path of its log in `logs/`.
 
 ### 5. Try it alone
 
@@ -203,19 +203,19 @@ Click the button and say a few phrases in Spanish. Then stop talking and play an
 
 ### 6. Controls and what you see
 
-**The button,** top right. Drag it anywhere and it stays there next time. A left click starts it from `LISTO` and stops it once it runs; a right click stops it from any state, loading included.
+**The button,** top right. Drag it anywhere and it stays there next time. A left click starts it from `READY` and stops it once it runs; a right click stops it from any state, loading included.
 
 | It says | Meaning |
 |---|---|
-| `CARGANDO` | Loading the voice, about 20 s |
-| `LISTO` | Ready. Nothing is captured until you click |
-| `CONECTANDO` | Connecting the ASR, and the camera with the dub. The last 3 s of what you say meanwhile are kept |
-| `EN VIVO` | Live. The ring is the health of the lip sync, or of the lag with no dub, and the number is the lag in seconds |
-| `MIC EN ESPERA` | On speakers: the PC is playing, their voice or the Spanish one, so your mic waits. Speak when it says `EN VIVO` again |
-| `PAUSADO` | Paused: they took the floor, and your voice waits |
-| `MUDO` | Muted with F8: the other side gets silence |
-| `VOZ CRUDA` | Raw voice with F9: your own voice, untranslated |
-| `APAGANDO`, `APAGADO` | Stopping, and off. If it could not give your microphone back, it says so |
+| `LOADING` | Loading the voice, about 20 s |
+| `READY` | Nothing is captured until you click |
+| `CONNECTING` | Connecting the ASR, and the camera with the dub. The last 3 s of what you say meanwhile are kept |
+| `LIVE` | The ring is the health of the lip sync, or of the lag with no dub, and the number is the lag in seconds |
+| `MIC ON HOLD` | On speakers: the PC is playing, their voice or the Spanish one, so your mic waits. Speak when it says `LIVE` again |
+| `PAUSED` | They took the floor, and your voice waits |
+| `MUTED` | F8: the other side gets silence |
+| `RAW VOICE` | F9: your own voice, untranslated |
+| `STOPPING`, `OFF` | If it could not give your microphone back, it says so |
 
 **The keys** work from the click on, also while the call app is in front:
 
@@ -229,24 +229,24 @@ Click the button and say a few phrases in Spanish. Then stop talking and play an
 
 Your raw voice goes out alone only with F9, or by itself when the ASR is down for more than 3 s or the outgoing chain fails, so the other side is never left in silence.
 
-**The metrics line,** top left, also draggable: `LAG │ SYNC │ CORR │ TURNO │ ES→EN │ META`.
+**The metrics line,** top left, also draggable: `LAG │ SYNC │ CORR │ TURN │ ES→EN │ META`.
 
 | Field | Meaning |
 |---|---|
 | `LAG` | How late the English arrives: the last clause, and the p95 |
 | `SYNC` | With the dub: how far the voice is from your lips, and D |
 | `CORR` | Words the ASR changed after they went to Spark: counted, never acted on |
-| `TURNO` | Whose turn it is: `yo` (me) or `ellos` (them) |
-| `ES→EN` | What the cable carries: `EN ESPERA` (standby), `VOZ` (the English voice), `DOBLAJE` (the dub), `VOZ CRUDA`, `MUDO` or `APAGADO` |
+| `TURN` | Whose turn it is: `me` or `them` |
+| `ES→EN` | What the cable carries: `STANDBY`, `VOICE` (the English voice), `DUB`, `RAW VOICE`, `MUTED` or `OFF` |
 | `META` | Minutes since the click, the time Meta's API has been in use |
 
-`VOZ ES` at the end means the Spanish voice is on and loaded, and `PARLANTES` (speakers) that the call goes in turns. Problems show on it and stay: `ASR CAÍDO` (ASR down), `SUBTÍTULOS CAÍDOS` (subtitles down), `SIN CÁMARA RETRASADA` (no delayed camera), `SIN MÉTRICAS` (no metrics), or the name of a task that died. `CABLE 22 %` or `PYTHON 3 %` means a Windows volume slider is low: see [Troubleshooting](#9-troubleshooting). With the dub, `TARDE: reinicia con D 7.5` means the voice keeps reaching your lips late: restart with `RTT_DELAY_S=7.5`.
+`EN→ES VOICE` at the end means the Spanish voice is on and loaded, and `SPEAKERS` that the call goes in turns. Problems show on it and stay: `ASR DOWN`, `SUBTITLES DOWN`, `NO DELAYED CAMERA`, `NO METRICS`, or the name of a task that died. `CABLE 22 %` or `PYTHON 3 %` means a Windows volume slider is low: see [Troubleshooting](#9-troubleshooting). With the dub, `LATE: restart with D 7.5` means the voice keeps reaching your lips late: restart with `RTT_DELAY_S=7.5`.
 
 **The Meta panel,** under the metrics line, also draggable: one row per call to Meta's models, the latest at the bottom. Muse Voice Transcribe shows `listening` while it hears a turn and `heard` at its end; Muse Spark and MMS-TTS count their seconds while out, then keep their time and what they returned. It starts with the voice loading and Spark's first call, before the click. `RTT_META_PANEL=0` hides it.
 
-**The subtitle band,** at the bottom of the screen, as tall as what it has to say. What they say in English, in grey, and in Spanish, in white; below, what you said and how it came out. It fades after 9 s of silence, so the call stays in view. If they take the floor while your voice is speaking it says `TE ESTÁN HABLANDO` (they are talking to you), and what your voice did not get to say stays on it in amber, after `Sin decir:` (not said). Before the click it holds the camera guide, in English.
+**The subtitle band,** at the bottom of the screen, as tall as what it has to say. What they say in English, in grey, and in Spanish, in white; below, what you said and how it came out. It fades after 9 s of silence, so the call stays in view. If they take the floor while your voice is speaking it says `THEY ARE TALKING TO YOU`, and what your voice did not get to say stays on it in amber, after `Not said:`. Before the click it holds the camera guide.
 
-**Sounds.** A short cue on your speakers or headphones each time the button changes state, so you do not have to look at it: ready, live, muted and back, raw voice, they took the floor, stopping. `MIC EN ESPERA` has none: it comes and goes with every sentence. The other side never hears them. `RTT_SOUNDS=0` turns them off.
+**Sounds.** A short cue on your speakers or headphones each time the button changes state, so you do not have to look at it: ready, live, muted and back, raw voice, they took the floor, stopping. `MIC ON HOLD` has none: it comes and goes with every sentence. The other side never hears them. `RTT_SOUNDS=0` turns them off.
 
 ### 7. Synchronized dub (optional)
 
@@ -258,7 +258,7 @@ Without it, the other side sees your lips move about 5 s before they hear the En
 4. Run the check again ([section 3](#3-check-the-setup)). It measures the webcam: 30 frames per second is the goal, and less makes the video choppy. Low light and other apps using the webcam lower it.
 5. Once, optionally, and outside any call: `uv run python scripts/calibrate_av_offset.py`. Face the camera and clap when it says so; it prints the offset between picture and voice, for `RTT_AV_OFFSET_MS`.
 
-In the call, pick `OBS Virtual Camera` once the button says `LISTO`: it shows a card saying your video reaches them 7 s late, and your webcam opens only with the click. Do not use your webcam in the call app as well: while another app holds it, the app gets about 1 frame per second. Your own voice goes out 20 dB under the English (`RTT_VOICE_UNDER_DB`). The self-view shows the delayed video, and with a shared screen the cursor runs 7 s ahead of the voice, so turn the dub off to share.
+In the call, pick `OBS Virtual Camera` once the button says `READY`: it shows a card saying your video reaches them 7 s late, and your webcam opens only with the click. Do not use your webcam in the call app as well: while another app holds it, the app gets about 1 frame per second. Your own voice goes out 20 dB under the English (`RTT_VOICE_UNDER_DB`). The self-view shows the delayed video, and with a shared screen the cursor runs 7 s ahead of the voice, so turn the dub off to share.
 
 ### 8. Settings
 
@@ -270,13 +270,14 @@ They live in `.env`, and `.env.example` explains each one. The ones you may need
 | `RTT_MIC_NAME` | the Windows default | You speak into another microphone: part of its name |
 | `RTT_DUB` | `0` | `1` turns on the synchronized dub |
 | `RTT_CAMERA_NAME` | `HD UVC` | With the dub: part of your webcam's name |
-| `RTT_DELAY_S` | `7.0` | With the dub, if the metrics line says `TARDE` |
+| `RTT_DELAY_S` | `7.0` | With the dub, if the metrics line says `LATE` |
 | `RTT_AV_OFFSET_MS` | `0` | With the dub: the value `calibrate_av_offset.py` prints |
 | `RTT_VOICE_UNDER_DB` | `-20` | With the dub: your own voice under the English; `-inf` leaves it out |
 | `RTT_MMS_SPEAKING_RATE` | `1.45` | The pace of the English voice; lower is calmer, and the English then outlasts the Spanish |
 | `RTT_SOUNDS` | `1` | `0` silences the cues |
 | `RTT_META_PANEL` | `1` | `0` hides the panel of live calls to Meta's models |
 | `RTT_VOICE_IN` | `1` | `0` starts with their words only as subtitles, no Spanish voice (F6 switches it during the call) |
+| `RTT_UI_LANG` | `en` | `es` puts the interface in Spanish: the button, the metrics line, the band and the console |
 | `RTT_SPEAKERS` | `auto` | `auto` goes in turns unless the default output is named like headphones. Wired headphones on the jack often keep the speakers' name: `0` gives them full duplex. `1` always goes in turns |
 | `RTT_OVERLAY_HIDE_FROM_CAPTURE` | `0` | `1` keeps the band out of screen shares and recordings |
 | `RTT_GLOSSARY` | `glossary.txt` | You want terms rendered one way: copy `glossary.example.txt` to `glossary.txt` |
@@ -293,17 +294,17 @@ They live in `.env`, and `.env.example` explains each one. The ones you may need
 | `No audio output named 'CABLE Input'` | Install VB-CABLE ([step 2.3](#2-install)) and restart Windows |
 | `No microphone matches RTT_MIC_NAME=…` | Fix `RTT_MIC_NAME` in `.env`, or leave it empty for the Windows default |
 | `FAIL` on Muse Spark or Muse Voice Transcribe | Check the key, its access to both models, and the internet connection |
-| The other side hears nothing | The call's microphone must be `CABLE Output`, unmuted, and the button must say `EN VIVO` |
+| The other side hears nothing | The call's microphone must be `CABLE Output`, unmuted, and the button must say `LIVE` |
 | They hear you too low, or the metrics line says `CABLE 22 %` or `PYTHON 3 %` | Windows scales everything on the cable with two sliders: `CABLE Input` in *Settings › System › Sound*, and Python's in the volume mixer, which Windows remembers between runs. Raise both to 100 |
-| They hear their own voice in English, or an echo | On speakers the metrics line must say `PARLANTES`: set `RTT_SPEAKERS=1`. Keep any other speaker, such as a phone in the call, away from the microphone: the app only waits out what the PC plays. The default output must not be `CABLE Input` |
-| What I say while they talk gets lost | On speakers the call goes in turns: the button says `MIC EN ESPERA` while the PC plays. Speak on `EN VIVO`, press F6 to cut the Spanish voice short, or use headphones with `RTT_SPEAKERS=0` |
-| The button stays on `MIC EN ESPERA` | Something keeps playing on the PC, such as music, a video or notifications: close it |
-| No subtitles | The call must play on the Windows default output, which is where the app listens. If a service is down, the metrics line says `ASR CAÍDO` or `SUBTÍTULOS CAÍDOS` |
+| They hear their own voice in English, or an echo | On speakers the metrics line must say `SPEAKERS`: set `RTT_SPEAKERS=1`. Keep any other speaker, such as a phone in the call, away from the microphone: the app only waits out what the PC plays. The default output must not be `CABLE Input` |
+| What I say while they talk gets lost | On speakers the call goes in turns: the button says `MIC ON HOLD` while the PC plays. Speak on `LIVE`, press F6 to cut the Spanish voice short, or use headphones with `RTT_SPEAKERS=0` |
+| The button stays on `MIC ON HOLD` | Something keeps playing on the PC, such as music, a video or notifications: close it |
+| No subtitles | The call must play on the Windows default output, which is where the app listens. If a service is down, the metrics line says `ASR DOWN` or `SUBTITLES DOWN` |
 | Music or videos get subtitled | Everything the PC plays does: close them during the call |
 | Some of what they say never gets a subtitle | The Spanish voice was speaking, and the app hears nothing meanwhile. F6 turns the voice off |
 | The last words never arrive | Wait for the English, about 5 s (7 s with the dub), before muting or hanging up |
 | The band says `OBS Virtual Camera did not start` | Install OBS Studio ([step 2.6](#2-install)), close it if it is open, and start again |
-| The call says the camera is not available | With the dub, pick `OBS Virtual Camera` once the button says `LISTO`; without it, close other apps that use the webcam |
+| The call says the camera is not available | With the dub, pick `OBS Virtual Camera` once the button says `READY`; without it, close other apps that use the webcam |
 | Choppy video with the dub | More light, and the call on `OBS Virtual Camera`, never on the webcam itself. The check shows the frame rate |
 
 Every run writes one JSONL line per event to `logs/`; the console prints the file's name when it stops.

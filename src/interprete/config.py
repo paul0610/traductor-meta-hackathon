@@ -36,6 +36,7 @@ class Settings:
     meta_panel: bool
     voice_in: bool
     speakers: str
+    ui_lang: str
 
 
 def load() -> Settings:
@@ -57,6 +58,7 @@ def load() -> Settings:
         meta_panel=os.environ.get("RTT_META_PANEL", "1") == "1",
         voice_in=os.environ.get("RTT_VOICE_IN", "1") == "1",
         speakers=os.environ.get("RTT_SPEAKERS", "auto"),
+        ui_lang=os.environ.get("RTT_UI_LANG", "en"),
     )
 
 

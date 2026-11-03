@@ -16,6 +16,8 @@ from PySide6.QtCore import QEasingCurve, QPropertyAnimation, QRectF, Qt, QTimer
 from PySide6.QtGui import QColor, QFont, QPainter, QPen
 from PySide6.QtWidgets import QApplication, QFrame, QLabel, QVBoxLayout, QWidget
 
+from .texts import t
+
 WDA_EXCLUDEFROMCAPTURE = 0x11
 GREY = "#a4acb8"
 WHITE = "#ffffff"
@@ -46,7 +48,7 @@ class Overlay(QWidget):
         self.setWindowOpacity(0.0)
         self.hide_from_capture = hide_from_capture
 
-        self._alert = QLabel("TE ESTÁN HABLANDO")
+        self._alert = QLabel(t("THEY ARE TALKING TO YOU"))
         font = QFont("Segoe UI", 9, QFont.Weight.Bold)
         font.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing, 1.2)
         self._alert.setFont(font)
@@ -178,7 +180,7 @@ class Overlay(QWidget):
 
     def unsaid(self, es: str) -> None:
         """What my voice gave up when they took the floor, to say again."""
-        self._unsaid.setText(_tail(f"Sin decir: {es}", 180) if es else "")
+        self._unsaid.setText(_tail(t("Not said: {text}").format(text=es), 180) if es else "")
         self._changed()
 
     def collision(self, on: bool) -> None:

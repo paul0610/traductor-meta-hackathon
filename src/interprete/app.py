@@ -57,8 +57,10 @@ from .safety import ExitGuard, Watchdog
 from .tts.mms import MmsVoice
 from .tts.shaping import FAST_RATE_PCT
 from .turns.floor import Floor
+from .ui import texts
 from .ui.calls import HeardTurn
 from .ui.status import Phase, health, metrics_line, running
+from .ui.texts import t as tr
 from .video.virtual_cam import VirtualCam
 
 MT_ERRORS = (TimeoutError, openai.APIError, json.JSONDecodeError, KeyError)
@@ -248,14 +250,15 @@ class Outgoing:
                 return
         finally:
             self.opening = False
-        print(f"cámara {self.settings.camera_name} -> OBS Virtual Camera, {self.video.frames.delay_s:.2f} s tarde",
+        print(tr("camera {name} -> OBS Virtual Camera, {s:.2f} s late").format(name=self.settings.camera_name,
+                                                                                s=self.video.frames.delay_s),
               file=sys.stderr)
 
     def no_video(self, exc: Exception) -> None:
-        self.video_warning = " │ SIN CÁMARA RETRASADA"
+        self.video_warning = f" │ {tr('NO DELAYED CAMERA')}"
         self.emit("video", error=repr(exc)[:300])
-        print(f"AVISO: sin cámara retrasada, el otro lado ve tus labios {self.delay_s:.1f} s antes que la voz: {exc}",
-              file=sys.stderr)
+        print(tr("WARNING: no delayed camera, the other side sees your lips {s:.1f} s before the voice: {exc}")
+              .format(s=self.delay_s, exc=exc), file=sys.stderr)
 
     def guide(self) -> list[str]:
         """What the band says before the button."""
@@ -271,13 +274,16 @@ class Outgoing:
         own = app_volume(self.settings.cable_name)
         self.emit("state", what="cable_volume", volume=vol[0], mute=vol[1], app_volume=own)
         if vol[0] < CABLE_MIN_VOLUME or vol[1]:
-            self.cable_warning = f" │ CABLE {vol[0] * 100:.0f} %{' MUDO' if vol[1] else ''}"
-            print(f"AVISO: {self.settings.cable_name} está al {vol[0] * 100:.0f} %{' y mudo' if vol[1] else ''} en Windows: "
-                  "el otro lado te oirá muy bajo. Súbelo a 100 en Sonido > Salida > CABLE Input.", file=sys.stderr)
+            self.cable_warning = f" │ CABLE {vol[0] * 100:.0f} %{' ' + tr('MUTED') if vol[1] else ''}"
+            print(tr("WARNING: {cable} is at {pct:.0f} %{muted} in Windows: the other side will hear you very low. "
+                     "Raise it to 100 in Sound > Output > CABLE Input.")
+                  .format(cable=self.settings.cable_name, pct=vol[0] * 100, muted=tr(" and muted") if vol[1] else ""),
+                  file=sys.stderr)
         if own is not None and own < CABLE_MIN_VOLUME:
             self.cable_warning += f" │ PYTHON {own * 100:.0f} %"
-            print(f"AVISO: Python está al {own * 100:.0f} % en el mezclador de volumen de Windows: el otro lado te oirá "
-                  "muy bajo. Súbelo a 100 en Sistema > Sonido > Mezclador de volumen, con la app en marcha.", file=sys.stderr)
+            print(tr("WARNING: Python is at {pct:.0f} % in Windows' volume mixer: the other side will hear you very low. "
+                     "Raise it to 100 in System > Sound > Volume mixer, with the app running.").format(pct=own * 100),
+                  file=sys.stderr)
 
     def fixture_tap(self):
         """The fixture also stands in for the mic on the delay line, so a dub can be judged with no one speaking."""
@@ -473,16 +479,16 @@ class Outgoing:
             self.mixer.set_rest(rest)
 
     def bar_text(self, t: float) -> str:
-        notes = " │ ASR CAÍDO" if self.asr is not None and self.asr.t_down is not None else ""
+        notes = f" │ {tr('ASR DOWN')}" if self.asr is not None and self.asr.t_down is not None else ""
         if self.incoming is not None and self.incoming.asr is not None and self.incoming.asr.t_down is not None:
-            notes += " │ SUBTÍTULOS CAÍDOS"
+            notes += f" │ {tr('SUBTITLES DOWN')}"
         if self.incoming is not None and self.incoming.voice_on and self.incoming.voice_es is not None:
-            notes += " │ VOZ ES"
+            notes += f" │ {tr('EN→ES VOICE')}"
         if self.room is not None:
-            notes += " │ PARLANTES"
+            notes += f" │ {tr('SPEAKERS')}"
         notes += f"{self.cable_warning}{self.video_warning}"
         if not self.metrics.ok:
-            notes += " │ SIN MÉTRICAS"
+            notes += f" │ {tr('NO METRICS')}"
         line = metrics_line(lags=self.lags, sync_s=self.sync_err, delay_s=self.delay_s,
                             late=self.sync_late >= SYNC_LATE_STREAK,
                             corrections=self.policy.corrections_blocked if self.policy is not None else 0,
@@ -491,9 +497,9 @@ class Outgoing:
         return f"{self.fault} │ {line}" if self.fault else line
 
     def ready_line(self) -> str:
-        dub = f"DOBLAJE D {self.delay_s:.1f}s" if self.delay_s > 0 else "SIN DOBLAJE"
-        turns = " │ PARLANTES: POR TURNOS" if self.room is not None else ""
-        return f"LISTO │ {dub} │ {self.voice.name}{turns}"
+        dub = tr("DUB D {d:.1f}s").format(d=self.delay_s) if self.delay_s > 0 else tr("NO DUB")
+        turns = f" │ {tr('SPEAKERS: IN TURNS')}" if self.room is not None else ""
+        return f"{tr('READY')} │ {dub} │ {self.voice.name}{turns}"
 
     def connected(self) -> bool:
         return not self.opening and (self.asr is None or self.asr.clock.session_id is not None)
@@ -528,7 +534,7 @@ class Outgoing:
         seq = self.policy.take_seq()
         text = NOTICE_DUB_EN.format(n=round(self.delay_s)) if self.delay_s > 0 else NOTICE_EN
         self.submit_commit(Commit(utterance_id=f"out:notice:{seq}", commit_id=0, seq=seq, channel=Channel.OUT,
-                                  text_src="(aviso inicial)", prefix_src="", boundary="notice",
+                                  text_src=tr("(opening notice)"), prefix_src="", boundary="notice",
                                   t_src_start=t - self.delay_s, t_src_end=None, t_src_source="notice", t_commit=t,
                                   text_tgt=text))
         self.emit("state", what="notice", seq=seq)
@@ -718,7 +724,7 @@ class Incoming:
         if not self.voice_on and self.speaker is not None:
             self.speaker.hush()
         self.emit("state", what="voice_in", on=self.voice_on)
-        self.ui.mine("Voz en español " + ("encendida." if self.voice_on else "apagada: solo subtítulos."))
+        self.ui.mine(tr("Spanish voice on.") if self.voice_on else tr("Spanish voice off: subtitles only."))
 
     async def say_worker(self) -> None:
         """Their clauses in Spanish, in order. One that would start too late is only read: the voice must not drift.
@@ -848,7 +854,7 @@ class App:
             self.on_f9()
         r = await asyncio.to_thread(restore_mic, self.mic_name)
         self.emit("state", what="f10", ok=r.ok, changed=r.changed, f10_s=r.elapsed_s, detail=r.detail)
-        print(f"\r[f10] {'ok' if r.ok else 'FALLÓ'} {r.elapsed_s * 1000:.0f} ms: {r.detail}".ljust(100))
+        print(f"\r[f10] {'ok' if r.ok else tr('FAILED')} {r.elapsed_s * 1000:.0f} ms: {r.detail}".ljust(100))
 
     def hotkeys(self) -> None:
         import keyboard
@@ -886,7 +892,8 @@ class App:
         name = task.get_name()
         self.emit("state", what="fatal", task=name, error=repr(exc)[:300])
         print(f"\r[error] {name}: {exc!r}"[:300], file=sys.stderr)
-        fault = f"ERROR {name}: {'voz cruda en el cable' if name.startswith('out.') else 'sin subtítulos'}"
+        fault = tr("ERROR {task}: raw voice on the cable" if name.startswith("out.")
+                   else "ERROR {task}: no subtitles").format(task=name)
         self.ui.bar(fault)
         if self.out is not None:
             self.out.fault = fault
@@ -911,12 +918,12 @@ class App:
         self.ui.call_end(("tts", "load"), "the voice did not load", failed=True)
         print(f"The English voice did not load ({self.voice_error}). The first run downloads it from Hugging Face, "
               "so it needs internet once.", file=sys.stderr)
-        self.ui.mine("No se pudo cargar la voz. La primera vez se descarga y necesita internet.")
+        self.ui.mine(tr("The voice did not load. The first run downloads it and needs internet."))
         self.stop.set()
 
     async def load(self) -> None:
         if self.out is not None:                     # first: two voices in one call is worse than a later start
-            self.ui.mine("Cargando la voz…")
+            self.ui.mine(tr("Loading the voice…"))
             self.ui.call_start(("tts", "load"), "MMS-TTS, this CPU", "en", "loading Meta's open weights")
             await self.out.voice.start()
             self.ui.call_end(("tts", "load"), f"voice ready: {self.settings.mms_model}")
@@ -929,8 +936,8 @@ class App:
     async def shut(self) -> None:
         self.guard.run()
         self.ui.phase(Phase.OFF)
-        self.ui.mine("Apagado. Micrófono físico restaurado." if self.restored
-                     else "Apagado. No pude restaurar el micrófono: revísalo en Sonido de Windows.")
+        self.ui.mine(tr("Off. Physical microphone restored.") if self.restored
+                     else tr("Off. Could not restore the microphone: check it in Windows' Sound settings."))
         if not self.args.no_overlay:
             await asyncio.sleep(OFF_HOLD_S)
 
@@ -965,7 +972,7 @@ class App:
             for c in self.chains:
                 c.setup(key, self.spark)
         self.ui.on_stop(self.stop.set)
-        self.ui.bar("Cargando…")
+        self.ui.bar(tr("Loading…"))
         loading = asyncio.ensure_future(self.load())     # 15 s or more, and the button has to work meanwhile
         stopped = asyncio.ensure_future(self.stop.wait())
         await asyncio.wait((loading, stopped), return_when=asyncio.FIRST_COMPLETED)
@@ -977,13 +984,13 @@ class App:
                 self.voice_failed(exc)
             else:
                 self.ui.phase(Phase.READY)
-                self.ui.bar(self.out.ready_line() if self.out is not None else "LISTO")
+                self.ui.bar(self.out.ready_line() if self.out is not None else tr("READY"))
                 self.ui.guide(self.out.guide() if self.out is not None else [READY_EN])
                 await self.ui.go(self.stop)
         if self.stop.is_set():
             self.ui.phase(Phase.STOPPING)
             self.ui.guide([])
-            self.ui.bar("Apagado" if self.voice_error is None else "Apagado: no se pudo cargar la voz")
+            self.ui.bar(tr("Off") if self.voice_error is None else tr("Off: the voice did not load"))
             loading.cancel()
             await asyncio.gather(loading, return_exceptions=True)
             if self.out is not None:
@@ -994,14 +1001,15 @@ class App:
             return
         self.ui.phase(Phase.STARTING)
         self.ui.guide([])
-        self.ui.bar("Conectando…")
+        self.ui.bar(tr("Connecting…"))
         await asyncio.sleep(0.05)                    # opening the devices holds the screen 2 s: the press has to show first
         for c in self.chains:
             c.start_audio()
         self.hotkeys()
-        print("F7 aviso · F8 mudo · F9 voz cruda on/off · F10 mic físico · Ctrl-C salir", file=sys.stderr)
-        turns = " Con parlantes, habla cuando el botón diga EN VIVO." if self.room is not None else ""
-        self.ui.mine(f"Al otro lado solo llega inglés.{turns} F7 aviso · F8 mudo · F9 voz cruda · F10 mic físico")
+        print(tr("F7 notice · F8 mute · F9 raw voice on/off · F10 physical mic · Ctrl-C quit"), file=sys.stderr)
+        turns = [tr("On speakers, speak when the button says LIVE.")] if self.room is not None else []
+        self.ui.mine(" ".join([tr("Only English reaches the other side."), *turns,
+                               tr("F7 notice · F8 mute · F9 raw voice · F10 physical mic")]))
         if self.args.seconds:
             self.loop.call_later(self.args.seconds, self.stop.set)
         for c in self.chains:
@@ -1016,7 +1024,7 @@ class App:
         try:
             await self.stop.wait()
             self.ui.phase(Phase.STOPPING)
-            self.ui.mine("Apagando…")
+            self.ui.mine(tr("Stopping…"))
             await asyncio.sleep(0.5)
         finally:
             for t in self.tasks:
@@ -1107,6 +1115,7 @@ def no_quick_edit(kernel32=None) -> None:
 
 def main() -> None:
     utf8_output()
+    texts.set_lang(config.load().ui_lang)
     args = parse_args()
     no_quick_edit()
     preflight(args, config.load())

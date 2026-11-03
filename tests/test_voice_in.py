@@ -113,6 +113,6 @@ def test_f6_turns_the_voice_off_and_drops_what_has_not_played():
     chain = SimpleNamespace(voice_on=True, speaker=SimpleNamespace(hush=lambda: hushed.append(1)),
                             emit=lambda ev, **f: None, ui=SimpleNamespace(mine=said.append))
     app.Incoming.toggle_voice(chain)
-    assert chain.voice_on is False and hushed == [1] and "apagada" in said[-1]
+    assert chain.voice_on is False and hushed == [1] and "off" in said[-1]
     app.Incoming.toggle_voice(chain)
     assert chain.voice_on is True and hushed == [1]

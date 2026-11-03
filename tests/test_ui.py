@@ -188,7 +188,7 @@ def band(qt):
 
 def test_the_band_takes_only_the_room_its_text_needs(qt):
     o = band(qt)
-    o.mine("Cargando la voz…")
+    o.mine("Loading the voice…")
     small = o.height()
     o.their_final("Do you have experience with data?")
     o.their_translation("¿Tienes experiencia con datos? " * 8)
@@ -271,17 +271,17 @@ def test_the_button_says_what_the_other_side_gets(flags, phase):
 def test_the_line_reads_as_the_plan_wrote_it():
     line = metrics_line(lags=[3.1, 2.4], sync_s=0.3, delay_s=7.0, late=False, corrections=3, theirs=True, cable="DUB",
                         minutes=12.4)
-    assert line == "LAG 2.4s p95 3.1s │ SYNC +0.3s (D 7.0s) │ CORR 3 │ TURNO: ellos │ ES→EN DOBLAJE │ META 12 min"
+    assert line == "LAG 2.4s p95 3.1s │ SYNC +0.3s (D 7.0s) │ CORR 3 │ TURN: them │ ES→EN DUB │ META 12 min"
 
 
 def test_without_a_dub_there_is_no_sync():
     line = metrics_line(lags=[], sync_s=0.0, delay_s=0.0, late=False, corrections=0, theirs=False, cable="MUTE", minutes=0.0)
-    assert line == "LAG -- │ CORR 0 │ TURNO: yo │ ES→EN MUDO │ META 0 min"
+    assert line == "LAG -- │ CORR 0 │ TURN: me │ ES→EN MUTED │ META 0 min"
 
 
 def test_three_late_clauses_propose_a_longer_delay():
     line = metrics_line(lags=[9.0], sync_s=1.2, delay_s=7.0, late=True, corrections=0, theirs=False, cable="DUB", minutes=1.0)
-    assert "TARDE: reinicia con D 7.5" in line
+    assert "LATE: restart with D 7.5" in line
 
 
 def chain(**over):
@@ -308,7 +308,7 @@ def test_what_is_down_shows_on_the_line():
     down = SimpleNamespace(t_down=5.0)
     line = Outgoing.bar_text(chain(asr=down, incoming=SimpleNamespace(asr=down, voice_on=False, voice_es=None),
                                    metrics=SimpleNamespace(ok=False)), 6.0)
-    for word in ("ASR CAÍDO", "SUBTÍTULOS CAÍDOS", "SIN MÉTRICAS"):
+    for word in ("ASR DOWN", "SUBTITLES DOWN", "NO METRICS"):
         assert word in line
 
 

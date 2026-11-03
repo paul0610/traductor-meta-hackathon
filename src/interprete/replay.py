@@ -226,7 +226,7 @@ class ConsoleUi:
         print(f"        → {tgt}")
 
     def their_failed(self, src: str) -> None:
-        print(f"        (sin traducción) {src}")
+        print(f"        (no translation) {src}")
 
 
 class Replay:

@@ -250,4 +250,4 @@ def test_the_line_says_speakers(room, said):
                             mixer=SimpleNamespace(state=SimpleNamespace(value="SILENT")), cable_warning="",
                             video_warning="", t_start=0.0, asr=None, incoming=None, metrics=SimpleNamespace(ok=True),
                             fault="", room=room)
-    assert ("PARLANTES" in app.Outgoing.bar_text(chain, 1.0)) is said
+    assert ("SPEAKERS" in app.Outgoing.bar_text(chain, 1.0)) is said
