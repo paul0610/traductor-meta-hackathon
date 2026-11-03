@@ -82,6 +82,11 @@ SIM_LINES = [
 ]
 
 
+def show_call(model: str, text: str) -> None:
+    """One Meta call per console line, named, so a screen recording shows which model said what, and how fast."""
+    print(f"\r{model:<25}│ {text}".ljust(100))
+
+
 def dub_delay(args, settings: config.Settings) -> float:
     """D of this session, fixed until it ends; 0 is no dub."""
     if args.delay is not None:
@@ -301,7 +306,7 @@ class Outgoing:
 
     def on_asr_event(self, ev: AsrEvent) -> None:
         if ev.kind is AsrKind.SPEECH_COMPLETE:
-            print(f"\r[es] {ev.text}".ljust(100))
+            show_call("Muse Voice Transcribe es", ev.text)
             self.ui.mine(ev.text)
         elif ev.kind is AsrKind.PARTIAL:
             self.ui.mine(ev.text)
@@ -351,7 +356,7 @@ class Outgoing:
             except MT_ERRORS as exc:
                 self.sched.tombstone(c.seq, f"mt:{type(exc).__name__}")
                 self.emit("mt", channel="out", seq=c.seq, utterance_id=c.utterance_id, error=f"{type(exc).__name__}: {exc}"[:300])
-                print(f"\r[mt] dropped seq {c.seq}: {type(exc).__name__}".ljust(100))
+                show_call("Muse Spark es→en", f"failed, clause {c.seq} dropped: {type(exc).__name__}")
                 continue
             c.text_tgt, c.t_mt, c.mt_calls = r.translation, r.t_end, 1
             self.translated[c.seq] = (c.text_src, c.text_tgt)
@@ -360,7 +365,7 @@ class Outgoing:
             self.emit("mt", channel="out", seq=c.seq, utterance_id=c.utterance_id, t_mt=r.t_end, mt_s=r.t_end - r.t_start,
                       text_tgt=c.text_tgt, mt_calls_per_commit=1, reasoning_tokens=r.reasoning_tokens,
                       effort=r.effort)
-            print(f"\r[en] {c.text_tgt}".ljust(100))
+            show_call(f"Muse Spark es→en {r.t_end - r.t_start:4.1f} s", c.text_tgt)
             self.ui.mine(c.text_src, c.text_tgt)
             await self.q_translated.put(c)
 
@@ -580,7 +585,7 @@ class Incoming:
     def on_asr_event(self, ev: AsrEvent) -> None:
         self.floor.on_event(ev)
         if ev.kind is AsrKind.SPEECH_COMPLETE:
-            print(f"\r[them] {ev.text}".ljust(100))
+            show_call("Muse Voice Transcribe en", ev.text)
             self.ui.their_final(ev.text)
         elif ev.kind is AsrKind.PARTIAL:
             self.ui.their_partial(ev.text)
@@ -617,7 +622,7 @@ class Incoming:
             self.conversation.add("Them", c.text_src)
             self.turn_text = r.translation if c.commit_id == 0 else f"{self.turn_text} {r.translation}"
             self.ui.their_translation(self.turn_text)
-            print(f"\r[sub] {r.translation}".ljust(100))
+            show_call(f"Muse Spark en→es {r.t_end - r.t_start:4.1f} s", r.translation)
             row.update(t_mt=r.t_end, t_shown=now(), mt_s=r.t_end - r.t_start, text_tgt=r.translation)
             self.emit("mt", channel="in", seq=c.seq, utterance_id=c.utterance_id, t_mt=r.t_end, mt_s=r.t_end - r.t_start,
                       text_tgt=r.translation, mt_calls_per_commit=1, reasoning_tokens=r.reasoning_tokens, effort=r.effort)

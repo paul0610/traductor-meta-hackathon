@@ -38,11 +38,13 @@ Design, contracts, clock model and safety rules: [`docs/SPEC.md`](docs/SPEC.md).
 
 ### Meta models used and where they run
 
-| Model | What it does | Where it runs |
-|---|---|---|
-| Muse Voice Transcribe | Hears both sides, with turn and timing events | Meta Model API, cloud |
-| Muse Spark | Translates both ways, and drives the setup assistant with tool calls | Meta Model API, cloud |
-| MMS-TTS (`facebook/mms-tts-eng`) | Speaks the English | Open weights, on this PC, CPU |
+| Model | What it does | How it is called | Code |
+|---|---|---|---|
+| Muse Voice Transcribe (`muse-voice-transcribe-1.0`) | Hears both sides as they speak: partial text, the end of each turn, and timing events that decide when a clause is ready and when it must play | Meta Model API, realtime WebSocket `wss://api.meta.ai/v1/asr/realtime`, 16 kHz PCM | [`asr/meta_realtime.py`](src/interprete/asr/meta_realtime.py) |
+| Muse Spark (`muse-spark-1.3`) | Translates each clause both ways, with the whole conversation and the glossary; drives the setup assistant with tool calls | Meta Model API, chat completions at `https://api.meta.ai/v1`: structured output with `reasoning_effort` minimal to translate, tools with low in the setup | [`mt/spark.py`](src/interprete/mt/spark.py), [`mt/context.py`](src/interprete/mt/context.py), [`setup/assistant.py`](src/interprete/setup/assistant.py) |
+| MMS-TTS (`facebook/mms-tts-eng`) | Speaks the English | Open weights through `transformers`, on this PC's CPU, 4 threads | [`tts/mms.py`](src/interprete/tts/mms.py) |
+
+Every call shows on the console as it happens, named and timed, such as `Muse Spark es→en  1.2 s │ Sure. In my last project…`, and every run writes each call with its timing to `logs/app_<date>_<time>.jsonl`.
 
 `scripts/make_fixtures.py` also uses `facebook/mms-tts-spa`, for test voices only.
 
