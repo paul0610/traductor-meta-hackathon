@@ -16,11 +16,11 @@ if not exist ".env" (
     goto end
 )
 
-echo Interprete ES-EN    F7 aviso    F8 mudo    F9 tu voz cruda on/off    F10 mic fisico    Ctrl-C salir
-echo En la videollamada elige "CABLE Output" como microfono: al otro lado solo llega ingles.
-echo Con el doblaje (RTT_DUB=1) elige tambien "OBS Virtual Camera" como camara y deja OBS cerrado.
-echo Tarda unos 20 s en cargar. Nada sale de esta PC hasta que pulses el boton redondo, arriba a la derecha.
-echo Otro clic, o clic derecho, apaga todo y restaura el microfono.
+echo Interprete ES-EN    F7 AI notice    F8 mute    F9 your raw voice on/off    F10 physical mic    Ctrl-C quit
+echo In the call, pick "CABLE Output" as the microphone: only English reaches the other side.
+echo With the dub (RTT_DUB=1), also pick "OBS Virtual Camera" as the camera, and keep OBS closed.
+echo Loading takes about 20 s. Nothing leaves this PC until you click the round button, top right.
+echo Click it again, or right-click it, to stop everything and give the microphone back.
 echo.
 uv run --locked python -m interprete.app %*
 
