@@ -85,26 +85,27 @@ def run_voice(delay: float | None) -> Path:
     def relay() -> None:
         for line in app.stderr:
             sys.stderr.write(line)
-            if line.startswith("cámara"):
+            if line.startswith(("camera", "cámara")):      # RTT_UI_LANG en or es
                 camera.set()
 
     threading.Thread(target=relay, daemon=True).start()
-    print("Cargando, unos 20 s. No hables todavía.", flush=True)
+    print("Loading, about 20 s. Do not speak yet.", flush=True)
     while not camera.wait(0.5):
         if app.poll() is not None:
-            raise SystemExit("La app terminó sin abrir la cámara: mira el aviso de arriba.")
+            raise SystemExit("The app ended without opening the camera: see the warning above.")
     t_go = time.monotonic()
-    print("\n¡HABLA YA! Español, mirando a la cámara, con una pausa de un segundo entre frases, hasta el segundo pitido.\n", flush=True)
+    print("\nSPEAK NOW! Spanish, facing the camera, with a one-second pause between phrases, until the second beep.\n",
+          flush=True)
     winsound.Beep(*BEEP)
     time.sleep(d + 1.0)
     clip_path = Path("logs") / f"clip_{time.strftime('%Y%m%d_%H%M%S')}.mp4"
     clip = record_clip(clip_path)
     time.sleep(max(0.0, t_go + VOICE_S - time.monotonic()))
-    print("\nYa puedes callar. Unos segundos más para que salga lo que falta.\n", flush=True)
+    print("\nYou can stop. A few more seconds for the rest to come out.\n", flush=True)
     winsound.Beep(*BEEP)
     app.wait()
     clip.wait()
-    print(f"clip de lo que ve el otro lado: {clip_path}")
+    print(f"clip of what the other side sees: {clip_path}")
     return new_log(before)
 
 
@@ -125,23 +126,23 @@ def source_errors(events: list[dict], delay_s: float) -> None:
     if start is None:
         return
     if not words_path.exists():
-        print("sin verdad de terreno: corre scripts/make_fixtures.py")
+        print("no ground truth: run scripts/make_fixtures.py")
         return
     rows = sorted((e for e in events if e["ev"] == "commit" and e.get("phase") == "report"
                    and e.get("channel") == "out" and e.get("text_src")), key=lambda e: e["seq"])
     truth = clause_truth(rows, json.loads(words_path.read_text(encoding="utf-8")), start["t_start"])
-    print(f"cláusulas con verdad: {len(truth)} de {len(rows)}")
+    print(f"clauses with ground truth: {len(truth)} of {len(rows)}")
     for source in ("mic_onset", "speech_start", "partial_arrival"):
         errs = [r["t_src_start"] - truth[r["seq"]] for r in rows if r["seq"] in truth and r["t_src_source"] == source]
-        print(f"  t_src_start - verdad, {source}: {_stats(errs)}")
+        print(f"  t_src_start - truth, {source}: {_stats(errs)}")
     real = [r["t_play_start"] - (truth[r["seq"]] + delay_s) for r in rows
             if r["seq"] in truth and r.get("t_play_start") is not None]
-    print(f"  arranque de la voz inglesa - (verdad + D): {_stats(real)}")
+    print(f"  English voice start - (truth + D): {_stats(real)}")
     if real:
-        print(f"  p95 de |error real|: {np.percentile(np.abs(real), 95):.3f} s")
+        print(f"  p95 of |real error|: {np.percentile(np.abs(real), 95):.3f} s")
     ends = [a["t_play_start"] + a["duration_s"] - (truth[b["seq"]] + delay_s) for a, b in zip(rows, rows[1:])
             if b["seq"] in truth and a.get("t_play_start") is not None and a.get("duration_s") is not None]
-    print(f"  fin de la voz inglesa - (inicio real de la siguiente cláusula + D): {_stats(ends)}")
+    print(f"  English voice end - (real start of the next clause + D): {_stats(ends)}")
 
 
 def real_voice_errors(events: list[dict], delay_s: float, offset_s: float) -> None:
@@ -160,14 +161,14 @@ def real_voice_errors(events: list[dict], delay_s: float, offset_s: float) -> No
         if r is not None and abs(r["t_src_start"] - t) <= MATCH_S and (held is None or abs(r["t_src_start"] - t) < abs(r["t_src_start"] - held[1])):
             nearest[r["seq"]] = (r, t)
     pairs = list(nearest.values())
-    print(f"frases en el micrófono: {len(onsets)}; con su cláusula: {len(pairs)}; ancladas al micrófono: "
-          f"{sum(r['t_src_source'] == 'mic_onset' for r in rows)} de {len(rows)}")
-    print(f"  t_src_start - inicio real: {_stats([r['t_src_start'] - t for r, t in pairs])}")
+    print(f"phrases in the microphone: {len(onsets)}; with their clause: {len(pairs)}; anchored to the microphone: "
+          f"{sum(r['t_src_source'] == 'mic_onset' for r in rows)} of {len(rows)}")
+    print(f"  t_src_start - real start: {_stats([r['t_src_start'] - t for r, t in pairs])}")
     lips = [r["t_play_start"] - (t + delay_s + offset_s) for r, t in pairs]
-    print(f"  voz inglesa - labios al abrir frase: {_stats(lips)}")
+    print(f"  English voice - lips opening a phrase: {_stats(lips)}")
     if lips:
         off = np.abs(lips)
-        print(f"  p95 de |error| {np.percentile(off, 95):.3f} s; más de 0,5 s: {int((off > 0.5).sum())}; más de 1 s: {int((off > 1.0).sum())}")
+        print(f"  p95 of |error| {np.percentile(off, 95):.3f} s; over 0.5 s: {int((off > 0.5).sum())}; over 1 s: {int((off > 1.0).sum())}")
 
 
 def voice_delay(events: list[dict]) -> None:
@@ -178,8 +179,8 @@ def voice_delay(events: list[dict]) -> None:
     x, rate = read_recording(rec)
     ref = soxr.resample(np.frombuffer(read_wav(FIXTURE), "<i2").astype(np.float32) / 32768.0, RATE, rate)
     lag, peak = find_offset(x, ref)
-    print(f"voz bajo el doblaje en el cable: {rec['t_start'] + lag / rate - start['t_start']:.3f} s tarde "
-          f"(pico {peak:.2f}; suma la latencia del propio cable)")
+    print(f"voice under the dub on the cable: {rec['t_start'] + lag / rate - start['t_start']:.3f} s late "
+          f"(peak {peak:.2f}; includes the cable's own latency)")
 
 
 def main() -> int:
@@ -192,11 +193,11 @@ def main() -> int:
     events = read(path)
     s = summarize(events)
     print(json.dumps(s["out"]["dub"], indent=2, ensure_ascii=False))
-    print(f"commits {s['out']['commits']}, sonaron {s['out']['played']}, bytes {s['out']['bytes_pct']} %, "
-          f"huecos {s['out']['cable_gaps']}, D estimado {s['out']['d_estimate_s']}, lag del ASR p50 {s['out']['asr']['lag_s']['p50']}")
+    print(f"commits {s['out']['commits']}, played {s['out']['played']}, bytes {s['out']['bytes_pct']} %, "
+          f"gaps {s['out']['cable_gaps']}, estimated D {s['out']['d_estimate_s']}, ASR lag p50 {s['out']['asr']['lag_s']['p50']}")
     print(f"log: {path}\n")
     fails = gate_s(s)
-    print(f"Compuerta S (cifras): {'PASA' if not fails else 'NO PASA'}")
+    print(f"Gate S (numbers): {'PASS' if not fails else 'FAIL'}")
     for f in fails:
         print(f"  - {f}")
     if s["out"]["dub"] is not None:

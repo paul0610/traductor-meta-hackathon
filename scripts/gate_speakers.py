@@ -202,7 +202,7 @@ def main() -> int:
     without, with_gate = report(OUT / "open"), report(OUT / "gated")
     echo = lambda sent: sent["them"] + sent["voice"]
     ok = echo(with_gate) == 0 and echo(without) > 0
-    print(f"R: {'PASA' if ok else 'NO PASA'}: their words or the Spanish voice sent back, {echo(without)} without the "
+    print(f"R: {'PASS' if ok else 'FAIL'}: their words or the Spanish voice sent back, {echo(without)} without the "
           f"gate, {echo(with_gate)} with it")
     return 0 if ok else 1
 

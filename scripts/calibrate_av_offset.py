@@ -87,15 +87,15 @@ def main() -> int:
     watcher.start()
 
     print(f"D = {s.delay_s} s, RTT_AV_OFFSET_MS = {s.av_offset_ms:.0f}.")
-    print("Manos separadas y a la vista. En cada ¡YA! júntalas de golpe y déjalas juntas un segundo.")
+    print("Hands apart and in view. At each NOW! bring them together sharply and keep them together a second.")
     wait = threading.Event()
     t_begin = now()
     with Recorder("CABLE Output") as rec:
         wait.wait(2.0)
         for i in range(args.claps):
-            print(f"  palmada {i + 1} de {args.claps}: ¡YA!", flush=True)
+            print(f"  clap {i + 1} of {args.claps}: NOW!", flush=True)
             wait.wait(EVERY_S)
-        print(f"Quieto {s.delay_s:.0f} s más: lo que entra tarda eso en salir.", flush=True)
+        print(f"Keep still {s.delay_s:.0f} s more: what goes in takes that long to come out.", flush=True)
         wait.wait(s.delay_s + 1.5)
     elapsed = now() - t_begin
     watcher.halt.set()
@@ -111,21 +111,21 @@ def main() -> int:
     np.savez(Path("logs") / f"clap_{time.strftime('%Y%m%d_%H%M%S')}.npz", t=times, motion=motion, heard=heard)
     middle = float(np.median(found)) if found else 0.0
     good = [v for v in found if abs(v - middle) <= SCATTER_MAX_S / 2]
-    print(f"Oídas {len(heard)}, vistas {len(found)}, coinciden {len(good)}. La webcam dio {video.read / elapsed:.0f} fps.")
+    print(f"Heard {len(heard)}, seen {len(found)}, matching {len(good)}. The webcam gave {video.read / elapsed:.0f} fps.")
     if found:
-        print("Audio menos video por palmada (s): " + " ".join(f"{v:+.3f}" for v in found))
+        print("Audio minus video per clap (s): " + " ".join(f"{v:+.3f}" for v in found))
     if len(heard) < MIN_CLAPS:
-        print("Muy pocas palmadas oídas: acércate al micrófono y hazlas más fuertes.")
+        print("Too few claps heard: get closer to the microphone and clap louder.")
         return 1
     if len(found) < MIN_CLAPS:
-        print("Muy pocas palmadas vistas: deja las manos dentro del encuadre, separadas antes de cada palmada.")
+        print("Too few claps seen: keep your hands in frame, apart before each clap.")
         return 1
     if len(good) < MIN_CLAPS:
-        print(f"Las palmadas difieren más de {SCATTER_MAX_S} s: júntalas de golpe y no las separes enseguida.")
+        print(f"The claps differ by more than {SCATTER_MAX_S} s: bring your hands together sharply and do not part them at once.")
         return 1
     off = float(np.median(good))
-    print(f"Desfase {off:+.3f} s, dispersión {np.ptp(good):.3f} s, con {len(good)} de {len(found)} palmadas.")
-    print(f"Pon en .env: RTT_AV_OFFSET_MS={s.av_offset_ms + off * 1000:.0f}")
+    print(f"Offset {off:+.3f} s, spread {np.ptp(good):.3f} s, from {len(good)} of {len(found)} claps.")
+    print(f"Put in .env: RTT_AV_OFFSET_MS={s.av_offset_ms + off * 1000:.0f}")
     return 0
 
 

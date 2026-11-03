@@ -34,7 +34,7 @@ def run_app(live: bool, seconds: float) -> Path:
 
 
 def verdict(name: str, fails: list[str]) -> bool:
-    print(f"{name}: {'PASA' if not fails else 'NO PASA'}")
+    print(f"{name}: {'PASS' if not fails else 'FAIL'}")
     for f in fails:
         print(f"  - {f}")
     return not fails
@@ -50,8 +50,8 @@ def main() -> int:
     s = summarize(read(path))
     print(json.dumps(s, indent=2, ensure_ascii=False))
     print(f"\nlog: {path}")
-    ok_a = verdict("Compuerta A (bidireccional)", gate_a(s))
-    ok_60 = verdict("Gate de 60 s (commit -> primer PCM, huecos, bytes)", gate_60s(s))
+    ok_a = verdict("Gate A (both directions)", gate_a(s))
+    ok_60 = verdict("60 s gate (commit -> first PCM, gaps, bytes)", gate_60s(s))
     return 0 if ok_a and ok_60 else 1
 
 
