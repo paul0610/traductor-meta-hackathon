@@ -1,8 +1,8 @@
 # traductor-meta-hackathon
 
-**OS-level simultaneous interpreter, Spanish ⇄ English, for any video call**, built on Meta's **Muse Voice Transcribe** (realtime ASR), **Muse Spark** (translation) and **MMS-TTS** (the voice). You speak Spanish, or Spanglish, into your normal microphone and the other side hears fluent English. They speak English and you hear their words in Spanish on your headphones, and read them as subtitles.
+**OS-level simultaneous interpreter, Spanish ⇄ English, for any video call**, built on Meta's **Muse Voice Transcribe** (realtime ASR), **Muse Spark** (translation) and **MMS-TTS** (the voice). You speak Spanish, or Spanglish, into your normal microphone and the other side hears fluent English. They speak English and you hear their words in Spanish, on your speakers or headphones, and read them as subtitles.
 
-**Any meeting app, one setting.** It runs beside the call app, at the level of Windows, not inside it, so it is meant for all of them: Google Meet, Microsoft Teams, Zoom, Webex, Discord, or any other app that lets you pick a microphone. **The only thing to set in the call app is the microphone: `CABLE Output`**, the virtual microphone that carries the English. No plugin, no extension, and nothing to install on the other side. Your headphones stay as they are: the app subtitles whatever the call plays on them. With the [synchronized dub](#7-synchronized-dub-optional), also pick `OBS Virtual Camera` as the camera. Tested with Google Meet; the others take a microphone the same way, but were not tried.
+**Any meeting app, one setting.** It runs beside the call app, at the level of Windows, not inside it, so it is meant for all of them: Google Meet, Microsoft Teams, Zoom, Webex, Discord, or any other app that lets you pick a microphone. **The only thing to set in the call app is the microphone: `CABLE Output`**, the virtual microphone that carries the English. No plugin, no extension, and nothing to install on the other side. Your speakers or headphones stay as they are: the app subtitles whatever the call plays on them. With the [synchronized dub](#7-synchronized-dub-optional), also pick `OBS Virtual Camera` as the camera. Tested with Google Meet; the others take a microphone the same way, but were not tried.
 
 Track: **Indie Developer** · Theme: **Build for Your World**. I understand English but I am slow to speak it under pressure (interviews, meetings). This is "work in English today", not "learn English".
 
@@ -27,13 +27,15 @@ Work in progress during the hackathon week. Daily logs with measured numbers liv
 | One-button widget and draggable metrics line | done, and used in the Google Meet calls of Nov 2; F7 and F10 not yet pressed in a call |
 | Meta end to end: MMS-TTS on this PC is the voice | done, judged by ear and measured with a real voice; heard on a phone through Google Meet, Nov 2 |
 | Setup assistant: `Install.bat`, with Muse Spark driving a fixed set of tools | done; run on this PC with real Spark, every change declined, Nov 2; not yet tried on a clean PC |
-| Their words in Spanish on my headphones (MMS-TTS Spanish), the app deaf to the loopback while it speaks | done; run on the fixtures into a file, Nov 3: 13 clauses, 0.25 to 0.97 s each to synthesize; not yet heard in a call |
+| Their words in Spanish out loud (MMS-TTS Spanish), the app deaf to the loopback while it speaks | done; run on the fixtures into a file, Nov 3: 13 clauses, 0.25 to 0.97 s each to synthesize; not yet heard in a call |
+| Speakers: my mic waits while the PC plays, so the call goes in turns; headphones keep full duplex | done; [gate R](#metrics) offline, with the room's echo mixed into my mic, Nov 3: their words went back in 8 of 23 clauses without it, 0 of 11 with it; not yet tried on real speakers |
 
 ## How it works (short)
 
 ```
 OUT: mic ─► Muse Voice Transcribe (es) ─► clause commits ─► Muse Spark (es→en) ─► MMS-TTS (local) ─► scheduler ─► VB-CABLE ─► call app
-IN:  system loopback ─► Muse Voice Transcribe (en) ─► Muse Spark (en→es) ─► subtitle overlay + MMS-TTS (es, local) ─► headphones
+IN:  system loopback ─► Muse Voice Transcribe (en) ─► Muse Spark (en→es) ─► subtitle overlay + MMS-TTS (es, local) ─► speakers or headphones
+ROOM: on speakers, the loopback's level ─► the mic hands on silence while the PC plays, and 0.6 s after (turns)
 SETUP: Install.bat ─► uv sync ─► Muse Spark picks the next tool (tool calling) ─► fixed tools ask you, then act ─► warmcheck
 ```
 
@@ -55,8 +57,9 @@ Every call shows on screen as it runs, in the Meta panel: which model, how long 
 
 Honest notes:
 - **Meta's Model API has no text-to-speech model** (checked against the docs, the live model list and the cookbook on Oct 30), so the voice is Meta's open-weight MMS-TTS on this PC. The voice is plain and single-speaker, chosen because the rules require Meta models end to end. It has no backup: nothing that is not Meta's runs, even when something fails.
-- The interpreter requires Windows 11, [VB-CABLE](https://vb-audio.com/Cable/) and headphones (with speakers the mic would re-translate the other side's voice).
-- **Their words in Spanish cost a little of what they say.** The Spanish voice plays where the app listens, on the headphones, so while it speaks, and 0.4 s after, the app hears nothing: what they say in that moment gets neither a subtitle nor a voice. In a call of questions and answers it rarely matters; F6 turns the voice off, and `RTT_VOICE_IN=0` starts without it.
+- The interpreter requires Windows 11 and [VB-CABLE](https://vb-audio.com/Cable/).
+- **On speakers the call goes in turns.** The app takes your microphone straight from the device, so the call app's echo cancelling never touches it, and on speakers the mic would hear the other side and the Spanish voice and translate them back. So while the PC plays, and 0.6 s after, the mic hands on silence ([`audio/room.py`](src/interprete/audio/room.py)) and the button says `MIC EN ESPERA`: what you say then is lost, so speak on `EN VIVO`. The loopback's level says when, against the quietest moment of the last 5 s, so a steady hum on their side does not keep the mic shut. Headphones need none of it and let you talk over the other side: the app goes in turns unless the default output is named like headphones, and `RTT_SPEAKERS` decides by hand. Full duplex on speakers would need echo cancelling against the loopback: not done.
+- **Their words in Spanish cost a little of what they say.** The Spanish voice plays where the app listens, on the default output, so while it speaks, and 0.4 s after, the app hears nothing: what they say in that moment gets neither a subtitle nor a voice. In a call of questions and answers it rarely matters; F6 turns the voice off, and `RTT_VOICE_IN=0` starts without it. It never talks over you either: a clause that would start after you began answering, or more than 6 s after they said it, is only read.
 
 ## Manual (Windows 11)
 
@@ -76,7 +79,7 @@ Written so you can repeat on your PC what was tested on mine. The interface spea
 ### 1. What you need
 
 - **A Windows 11 PC, x64.** Only the one described at the top was tested. The voice runs on its CPU.
-- **A microphone and headphones.** With speakers, the microphone hears the other side and the app translates their voice back to them.
+- **A microphone, and speakers or headphones.** On speakers the call goes in turns: your mic waits while the PC plays ([section 6](#6-controls-and-what-you-see)). Headphones let you talk over the other side.
 - **An internet connection.** Muse Voice Transcribe and Muse Spark run on Meta's Model API.
 - **A Meta API key** from [dev.meta.ai](https://dev.meta.ai), for Muse Voice Transcribe and Muse Spark. It is the only account the project needs: VB-CABLE, OBS Studio, FFmpeg, uv, Git and the download of the voice ask for none.
 - **A call app that lets you choose the microphone.** Tested with Google Meet in the browser. Zoom, Teams and others let you choose it too, but were not tried.
@@ -138,7 +141,7 @@ Paste the key right after `MODEL_API_KEY=`, save and close. `.env` stays on your
 **2.5 Windows settings.**
 
 - *Settings › Privacy & security › Microphone:* turn on *Microphone access* and *Let desktop apps access your microphone*.
-- *Settings › System › Sound › Output:* choose your headphones. Never `CABLE Input`: the app subtitles what plays on the default output, and it would hear its own English.
+- *Settings › System › Sound › Output:* choose your speakers or headphones. Never `CABLE Input`: the app subtitles what plays on the default output, and it would hear its own English.
 
 **2.6 Only for the synchronized dub: OBS Studio and FFmpeg.**
 
@@ -157,7 +160,7 @@ OBS Studio is there only for its virtual camera driver: leave it closed. FFmpeg 
 uv run python scripts/warmcheck.py
 ```
 
-It tries for real everything a call needs, and changes nothing: your microphone, both ends of VB-CABLE and their volume, the default output, the capture of the system audio, both voices, and your key against Muse Spark and Muse Voice Transcribe; with the dub on, also the webcam and the virtual camera. The first time it downloads the voices, about 300 MB; after that it takes about a minute. Each line starts with `OK`, `WARN` or `FAIL`, each `WARN` and `FAIL` says what to change, and the last line is `READY FOR A CALL` or the number of failures.
+It tries for real everything a call needs, and changes nothing: your microphone, both ends of VB-CABLE and their volume, the default output and whether the call will go in turns on it, the capture of the system audio, both voices, and your key against Muse Spark and Muse Voice Transcribe; with the dub on, also the webcam and the virtual camera. The first time it downloads the voices, about 300 MB; after that it takes about a minute. Each line starts with `OK`, `WARN` or `FAIL`, each `WARN` and `FAIL` says what to change, and the last line is `READY FOR A CALL` or the number of failures.
 
 Two more checks, optional: `uv run python scripts/test_cable.py` plays five English sentences into `CABLE Input` and checks they come out whole on `CABLE Output`, and `uv run python scripts/asr_live.py` sends your microphone to Muse Voice Transcribe and prints what it hears.
 
@@ -167,19 +170,19 @@ Two more checks, optional: `uv run python scripts/test_cable.py` plays five Engl
 2. **Wait for `LISTO`** (ready). Nothing is captured yet. The band at the bottom of the screen says which camera to pick in the call.
 3. **Set up the call before you click:**
    - Microphone: `CABLE Output (VB-Audio Virtual Cable)`, unmuted, with noise cancellation off.
-   - Speakers: your headphones, the Windows default output.
+   - Speakers: your speakers or headphones, the Windows default output.
    - Camera: your usual one, or `OBS Virtual Camera` with the dub.
 
    In Google Meet they are under *More options › Settings*, in *Audio* and *Video*.
-4. **Click the button.** It says `CONECTANDO` (connecting), then `EN VIVO` (live). Speak Spanish: the other side hears English about 5 s after you start each phrase, and under 4 s after you end it. The console shows each step as it happens: `[es]` is what Muse Voice Transcribe heard, `[en]` what Muse Spark made of it.
-5. **When they speak English,** the band shows their words in grey and the Spanish in white, and right after each subtitle you hear it in Spanish on your headphones. F6 turns that voice off and on.
+4. **Click the button.** It says `CONECTANDO` (connecting), then `EN VIVO` (live). Speak Spanish: the other side hears English about 5 s after you start each phrase, and under 4 s after you end it. The console shows each step as it happens: `[es]` is what Muse Voice Transcribe heard, `[en]` what Muse Spark made of it. On speakers the button says `MIC EN ESPERA` while the call or the Spanish voice plays: speak when it says `EN VIVO` again.
+5. **When they speak English,** the band shows their words in grey and the Spanish in white, and right after each subtitle you hear it in Spanish, unless you have already started to answer. F6 turns that voice off and on.
 6. **To finish,** let the English end first, about 5 s after your last word (7 s with the dub), and click the button. It stops on `APAGADO` (off), and if `CABLE Output` had become the Windows default microphone, it puts yours back. A right click stops it from any state, and so does Ctrl-C in the console. The console then prints a summary of the run and the path of its log in `logs/`.
 
 ### 5. Try it alone
 
 No second person needed.
 
-**Your phone as the other side,** as in the calls of Nov 2: start the call on the PC, join it from your phone and mute the phone's microphone. Keep the phone's speaker away from the PC's microphone, or put earphones on the phone. The phone hears, and with the dub sees, what the other side would.
+**Your phone as the other side,** as in the calls of Nov 2: start the call on the PC, join it from your phone and mute the phone's microphone. Keep the phone's speaker away from the PC's microphone, or put earphones on the phone: on speakers the app waits out what the PC plays, not what the phone does. The phone hears, and with the dub sees, what the other side would.
 
 **No call at all:** start it from PowerShell in the project folder, recording the virtual microphone:
 
@@ -208,6 +211,7 @@ Click the button and say a few phrases in Spanish. Then stop talking and play an
 | `LISTO` | Ready. Nothing is captured until you click |
 | `CONECTANDO` | Connecting the ASR, and the camera with the dub. The last 3 s of what you say meanwhile are kept |
 | `EN VIVO` | Live. The ring is the health of the lip sync, or of the lag with no dub, and the number is the lag in seconds |
+| `MIC EN ESPERA` | On speakers: the PC is playing, their voice or the Spanish one, so your mic waits. Speak when it says `EN VIVO` again |
 | `PAUSADO` | Paused: they took the floor, and your voice waits |
 | `MUDO` | Muted with F8: the other side gets silence |
 | `VOZ CRUDA` | Raw voice with F9: your own voice, untranslated |
@@ -217,7 +221,7 @@ Click the button and say a few phrases in Spanish. Then stop talking and play an
 
 | Key | Action |
 |---|---|
-| F6 | Their words in Spanish on your headphones, on or off; the subtitles stay |
+| F6 | Their words in Spanish out loud, on or off; the subtitles stay. Off cuts the voice short, so on speakers your mic opens at once |
 | F7 | Tell the other side they are hearing an AI interpreter |
 | F8 | Mute everything / unmute |
 | F9 | Your raw voice on the cable, latched; F9 again to interpret again |
@@ -236,13 +240,13 @@ Your raw voice goes out alone only with F9, or by itself when the ASR is down fo
 | `ES→EN` | What the cable carries: `EN ESPERA` (standby), `VOZ` (the English voice), `DOBLAJE` (the dub), `VOZ CRUDA`, `MUDO` or `APAGADO` |
 | `META` | Minutes since the click, the time Meta's API has been in use |
 
-`VOZ ES` at the end means the Spanish voice is on and loaded. Problems show on it and stay: `ASR CAÍDO` (ASR down), `SUBTÍTULOS CAÍDOS` (subtitles down), `SIN CÁMARA RETRASADA` (no delayed camera), `SIN MÉTRICAS` (no metrics), or the name of a task that died. `CABLE 22 %` or `PYTHON 3 %` means a Windows volume slider is low: see [Troubleshooting](#9-troubleshooting). With the dub, `TARDE: reinicia con D 7.5` means the voice keeps reaching your lips late: restart with `RTT_DELAY_S=7.5`.
+`VOZ ES` at the end means the Spanish voice is on and loaded, and `PARLANTES` (speakers) that the call goes in turns. Problems show on it and stay: `ASR CAÍDO` (ASR down), `SUBTÍTULOS CAÍDOS` (subtitles down), `SIN CÁMARA RETRASADA` (no delayed camera), `SIN MÉTRICAS` (no metrics), or the name of a task that died. `CABLE 22 %` or `PYTHON 3 %` means a Windows volume slider is low: see [Troubleshooting](#9-troubleshooting). With the dub, `TARDE: reinicia con D 7.5` means the voice keeps reaching your lips late: restart with `RTT_DELAY_S=7.5`.
 
 **The Meta panel,** under the metrics line, also draggable: one row per call to Meta's models, the latest at the bottom. Muse Voice Transcribe shows `listening` while it hears a turn and `heard` at its end; Muse Spark and MMS-TTS count their seconds while out, then keep their time and what they returned. It starts with the voice loading and Spark's first call, before the click. `RTT_META_PANEL=0` hides it.
 
 **The subtitle band,** at the bottom of the screen, as tall as what it has to say. What they say in English, in grey, and in Spanish, in white; below, what you said and how it came out. It fades after 9 s of silence, so the call stays in view. If they take the floor while your voice is speaking it says `TE ESTÁN HABLANDO` (they are talking to you), and what your voice did not get to say stays on it in amber, after `Sin decir:` (not said). Before the click it holds the camera guide, in English.
 
-**Sounds.** A short cue on your headphones each time the button changes state, so you do not have to look at it: ready, live, muted and back, raw voice, they took the floor, stopping. The other side never hears them. `RTT_SOUNDS=0` turns them off.
+**Sounds.** A short cue on your speakers or headphones each time the button changes state, so you do not have to look at it: ready, live, muted and back, raw voice, they took the floor, stopping. `MIC EN ESPERA` has none: it comes and goes with every sentence. The other side never hears them. `RTT_SOUNDS=0` turns them off.
 
 ### 7. Synchronized dub (optional)
 
@@ -273,6 +277,7 @@ They live in `.env`, and `.env.example` explains each one. The ones you may need
 | `RTT_SOUNDS` | `1` | `0` silences the cues |
 | `RTT_META_PANEL` | `1` | `0` hides the panel of live calls to Meta's models |
 | `RTT_VOICE_IN` | `1` | `0` starts with their words only as subtitles, no Spanish voice (F6 switches it during the call) |
+| `RTT_SPEAKERS` | `auto` | `auto` goes in turns unless the default output is named like headphones. Wired headphones on the jack often keep the speakers' name: `0` gives them full duplex. `1` always goes in turns |
 | `RTT_OVERLAY_HIDE_FROM_CAPTURE` | `0` | `1` keeps the band out of screen shares and recordings |
 | `RTT_GLOSSARY` | `glossary.txt` | You want terms rendered one way: copy `glossary.example.txt` to `glossary.txt` |
 | `RTT_MODE` | `incremental` | `consecutive` waits for whole turns, the reliable fallback |
@@ -290,7 +295,9 @@ They live in `.env`, and `.env.example` explains each one. The ones you may need
 | `FAIL` on Muse Spark or Muse Voice Transcribe | Check the key, its access to both models, and the internet connection |
 | The other side hears nothing | The call's microphone must be `CABLE Output`, unmuted, and the button must say `EN VIVO` |
 | They hear you too low, or the metrics line says `CABLE 22 %` or `PYTHON 3 %` | Windows scales everything on the cable with two sliders: `CABLE Input` in *Settings › System › Sound*, and Python's in the volume mixer, which Windows remembers between runs. Raise both to 100 |
-| They hear their own voice in English, or an echo | Use headphones, and make sure the default output is not `CABLE Input` |
+| They hear their own voice in English, or an echo | On speakers the metrics line must say `PARLANTES`: set `RTT_SPEAKERS=1`. Keep any other speaker, such as a phone in the call, away from the microphone: the app only waits out what the PC plays. The default output must not be `CABLE Input` |
+| What I say while they talk gets lost | On speakers the call goes in turns: the button says `MIC EN ESPERA` while the PC plays. Speak on `EN VIVO`, press F6 to cut the Spanish voice short, or use headphones with `RTT_SPEAKERS=0` |
+| The button stays on `MIC EN ESPERA` | Something keeps playing on the PC, such as music, a video or notifications: close it |
 | No subtitles | The call must play on the Windows default output, which is where the app listens. If a service is down, the metrics line says `ASR CAÍDO` or `SUBTÍTULOS CAÍDOS` |
 | Music or videos get subtitled | Everything the PC plays does: close them during the call |
 | Some of what they say never gets a subtitle | The Spanish voice was speaking, and the app hears nothing meanwhile. F6 turns the voice off |
@@ -318,7 +325,7 @@ It is built on Windows audio and video plumbing: a virtual microphone (VB-CABLE)
 
 **Spanglish.** Say it in English, fall into Spanish when you get stuck, and one English voice comes out. "Cómo se dice" and "no sé" are dropped as fillers. Known limit: on a synthetic voice the ASR kept between 0 and 11 of 13 Spanish words inside English speech, and sometimes skips a passage entirely, so that passage is not interpreted. Terms in the glossary raised it to 10–13 of 13.
 
-**Turns.** If the other side really starts talking (four words and a second of speech, so "yeah" does not count), my voice finishes the clause it is on and gives way. What it did not say stays on the band, to repeat. The floor comes back when they stop.
+**Turns.** If the other side really starts talking (four words and a second of speech, so "yeah" does not count), my voice finishes the clause it is on and gives way. What it did not say stays on the band, to repeat. The floor comes back when they stop. The Spanish voice gives way to me in turn: once I start answering, what is left of their turn is only read. On speakers the mic waits while they speak, so talking over them is lost there.
 
 **Glossary.** Copy `glossary.example.txt` to `glossary.txt`. Terms reach Spark in both directions and the ASR as hints.
 
@@ -339,10 +346,11 @@ Gates on the Windows 11 PC described at the top, default settings, on synthetic 
 | A short job interview, synthetic voices on both sides | Nov 2, 08:12, single run | 18 of 18 English clauses played, 0 gaps; their subtitles p50 2.90 s after each phrase |
 | Google Meet call, my voice, no dub | Nov 2, 15:46, 10 min | 212 of 213 clauses played; first word of a phrase to its English p50 5.0 s, p95 6.8 s; end of a phrase to it p50 3.7 s |
 | Google Meet call, my voice, dub with D 7.0 s | Nov 2, 16:46, 2 min | 42 clauses, p95 of sync error 0.54 s, video 7.04 s late; the webcam gave 7.5 frames per second there, against 30 in the pre-call check |
+| R: speakers, offline. Both fixtures take turns, their voice and the Spanish one echoed into my mic 9 dB down; does my mic send them their own words? | Nov 3, 11:44 and 11:46, one run without the speakers' gate and one with it; Spark slow, 2.7 to 3.6 s a call | passes. Without the gate 8 of the 23 clauses my mic sent were their words, and the Spanish voice never played, because their echo looked like me answering. With it 0 of 11, and the Spanish voice played 7 clauses. The mic waited through 5.2 of my 23.8 s of speech: 3.6 s while they talked over me, 1.6 s where I began as the Spanish voice did |
 
 Known limits. When a clause is late it is because the English before it ran long, not because the voice or Spark were slow: late clauses were ready 1 s or more before their turn. A last word the clause before already translated can hold Spark past its limit; the listener misses nothing, but the gates count that clause as lost. Telling Spark it may answer nothing was worse: p95 went from 1.60 to 2.40 s and it dropped a real clause.
 
-Reproduce them without speaking: `uv run python scripts/make_fixtures.py` makes the synthetic voices with Meta's MMS-TTS, and `uv run python scripts/gate_60s.py` runs both chains on them and judges the run from its log. `uv run python scripts/gate_sync.py` does the same for the dub, and also compares each clause's timing against the real word times of the fixture; with `--voice` it runs on your own voice and camera for 60 s, checks where each turn opens against the microphone, and leaves in `logs/` a 20 s clip of what the other side gets. Gate 0 is a plain run, `uv run python -m interprete.app --out-only --no-overlay --delay 0 --wav-out logs/fixture_es.wav`, whose summary counts the clauses that played.
+Reproduce them without speaking: `uv run python scripts/make_fixtures.py` makes the synthetic voices with Meta's MMS-TTS, and `uv run python scripts/gate_60s.py` runs both chains on them and judges the run from its log. `uv run python scripts/gate_sync.py` does the same for the dub, and also compares each clause's timing against the real word times of the fixture; with `--voice` it runs on your own voice and camera for 60 s, checks where each turn opens against the microphone, and leaves in `logs/` a 20 s clip of what the other side gets. Gate 0 is a plain run, `uv run python -m interprete.app --out-only --no-overlay --delay 0 --wav-out logs/fixture_es.wav`, whose summary counts the clauses that played. `uv run python scripts/gate_speakers.py` runs gate R: the fixtures taking turns, twice, without and with the speakers' gate, with the cable and the Spanish voice kept off every real device.
 
 ## Roadmap (after the hackathon, no code this week)
 

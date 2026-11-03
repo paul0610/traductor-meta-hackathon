@@ -21,6 +21,7 @@ from pycaw.utils import AudioUtilities
 from interprete import config, utf8_output
 from interprete.audio import devices
 from interprete.audio.device_restore import endpoint_volume
+from interprete.audio.room import speakers_mode
 from interprete.mt.spark import Spark
 from interprete.tts.mms import MmsVoice
 from interprete.video.virtual_cam import HEIGHT, WIDTH, measure_webcam, open_virtual_camera
@@ -61,12 +62,13 @@ def check_devices(s: config.Settings) -> None:
 
     out = AudioUtilities.GetSpeakers().FriendlyName or ""
     if "CABLE" in out:
-        report("FAIL", "default output", f"{out}: the subtitles would hear your own English. Pick your headphones")
-    elif devices.looks_like_headphones(out):
-        report("OK", "default output", out)
+        report("FAIL", "default output", f"{out}: the subtitles would hear your own English. Pick your speakers "
+                                         "or headphones")
+    elif speakers_mode(s.speakers, out):
+        report("OK", "default output", f"{out}, taken for speakers: the call goes in turns, your mic waits while the "
+                                       "PC plays. Headphones by that name? RTT_SPEAKERS=0 lets you talk over them")
     else:
-        report("WARN", "default output", f"{out} does not look like headphones: with speakers the mic hears "
-                                         "the other side and translates their voice back")
+        report("OK", "default output", f"{out}, taken for headphones: you can talk over the other side")
     with pyaudio.PyAudio() as pa:
         try:
             d = pa.get_default_wasapi_loopback()

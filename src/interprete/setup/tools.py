@@ -21,6 +21,7 @@ from pathlib import Path
 
 from .. import config
 from ..audio import devices
+from ..audio.room import speakers_mode
 
 ENV = config.ROOT / ".env"
 EXAMPLE = config.ROOT / ".env.example"
@@ -258,7 +259,11 @@ class Tools:
         from pycaw.utils import AudioUtilities
 
         name = AudioUtilities.GetSpeakers().FriendlyName or ""
-        return {"name": name, "is_cable": "CABLE" in name.upper(), "looks_like_headphones": devices.looks_like_headphones(name)}
+        turns = speakers_mode(config.load().speakers, name)
+        return {"name": name, "is_cable": "CABLE" in name.upper(), "looks_like_headphones": devices.looks_like_headphones(name),
+                "call_goes_in_turns": turns,
+                "note": "speakers: the mic waits while the PC plays; RTT_SPEAKERS=0 if these are headphones" if turns
+                else "headphones: the person can talk over the other side"}
 
     def open_settings(self, page: str) -> dict:
         if page not in SETTINGS:

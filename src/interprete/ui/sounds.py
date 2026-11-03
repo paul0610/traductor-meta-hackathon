@@ -1,7 +1,7 @@
 """Short cues for what the button shows, so a call does not need eyes on it.
 
 Made here from plain tones: no files and no new dependency. They play on the Windows default
-output, the headphones, and never on the cable, so the other side does not hear them. The
+output, the speakers or headphones, and never on the cable, so the other side does not hear them. The
 loopback does take them to the ASR, which is why they stay short, soft and without speech.
 """
 

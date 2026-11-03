@@ -45,7 +45,7 @@ def default_mic() -> str:
 
 
 def default_output() -> Device:
-    """Windows' default output on WASAPI: the headphones the call plays on, and the loopback listens to."""
+    """Windows' default output on WASAPI: the speakers or headphones the call plays on, and the loopback hears."""
     for api in sd.query_hostapis():
         if api["name"] == HOSTAPI_ORDER[0] and api["default_output_device"] >= 0:
             i = api["default_output_device"]

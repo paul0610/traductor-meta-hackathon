@@ -30,9 +30,11 @@ class MicCapture:
         self._consumers: list[Consumer] = []
         self._stream: sd.InputStream | None = None
         self.device: devices.Device | None = None
+        self.gate: Callable[[float], bool] | None = None     # speakers: every consumer gets silence while it says so
         self.rate = 0
         self.overflows = 0
         self.blocks = 0
+        self.gated = 0
         self.t_first = self.t_last = 0.0
 
     @property
@@ -48,6 +50,9 @@ class MicCapture:
         if status.input_overflow:
             self.overflows += 1
         block = indata[:, 0].copy() if indata.shape[1] == 1 else indata.mean(axis=1, dtype=np.float32)
+        if self.gate is not None and self.gate(t_capture):
+            block.fill(0.0)                  # same length: the ASR's timing and the dub's delay go on
+            self.gated += 1
         self.blocks += 1
         self.t_first = self.t_first or t_capture
         self.t_last = t_capture

@@ -24,10 +24,10 @@ speaks Spanish and the other side hears English through a virtual microphone; th
 person reads Spanish subtitles. Get this PC ready for a first call, using only your tools.
 
 Every call needs: VB-CABLE, the virtual microphone, installed; Windows letting desktop apps use the microphone; and a \
-default output that is not CABLE Input, ideally headphones, because with speakers the microphone hears the other side \
-and translates their voice back. Optional, only if the person wants it: the synchronized dub, which sends their video \
-and voice 7 s late so the English matches their lips. It needs OBS Studio (only its virtual camera driver; OBS itself \
-stays closed), FFmpeg, camera access and a webcam. Ask about the dub with ask_person, in one sentence with its cost. \
+default output that is not CABLE Input. Speakers and headphones both work: on speakers the call goes in turns, the \
+microphone waiting while the PC plays, and headphones let the person talk over the other side. Optional, only if the \
+person wants it: the synchronized dub, which sends their video and voice 7 s late so the English matches their lips. \
+It needs OBS Studio (only its virtual camera driver; OBS itself stays closed), FFmpeg, camera access and a webcam. Ask about the dub with ask_person, in one sentence with its cost. \
 Offer the desktop shortcut. Always end with run_check, then finish.
 
 Rules:
@@ -53,7 +53,8 @@ TOOLS = [
                              "agree, wait for them, and check. Asks first."),
     _tool("microphone_access", "Do Windows' privacy settings let desktop apps use the microphone? Read-only."),
     _tool("camera_access", "Do Windows' privacy settings let desktop apps use the camera? Read-only. Only the dub needs it."),
-    _tool("default_output", "Windows' default output device. Read-only. It must not be CABLE Input, and should be headphones."),
+    _tool("default_output", "Windows' default output device, and whether the call will go in turns on it. Read-only. "
+                            "It must not be CABLE Input."),
     _tool("open_settings", "Open a Windows Settings page for the person to change something, and wait until they are done.",
           page={"type": "string", "enum": ["microphone", "camera", "sound"]}),
     _tool("ask_person", "Ask the person something and return their answer.", question={"type": "string"}),

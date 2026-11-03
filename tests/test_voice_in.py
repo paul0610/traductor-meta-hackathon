@@ -1,4 +1,5 @@
 import asyncio
+from unittest.mock import patch
 from types import SimpleNamespace
 
 import numpy as np
@@ -74,7 +75,8 @@ def run_worker(chain, items):
         task = asyncio.create_task(app.Incoming.say_worker(chain))
         await asyncio.sleep(0.05)
         task.cancel()
-    asyncio.run(go())
+    with patch.object(app, "now", lambda: 1.0):          # what they said at 0.0 is a second old
+        asyncio.run(go())
 
 
 def worker_chain(*, on=True, behind=0.0):
@@ -85,7 +87,7 @@ def worker_chain(*, on=True, behind=0.0):
 
     quiet = lambda *a, **k: None
     return SimpleNamespace(
-        q_say=asyncio.Queue(), voice_on=on, voice_es=SimpleNamespace(say=say),
+        q_say=asyncio.Queue(), voice_on=on, voice_es=SimpleNamespace(say=say), spoke_after=lambda t: False,
         speaker=SimpleNamespace(behind_s=lambda: behind, play=lambda p, r: played.append((p, r)) or 2.0),
         ui=SimpleNamespace(call_start=quiet, call_end=quiet), emit=lambda ev, **f: events.append((ev, f)),
     ), played, events
@@ -93,16 +95,16 @@ def worker_chain(*, on=True, behind=0.0):
 
 def test_their_clauses_are_said_in_order_while_the_voice_is_on():
     chain, played, events = worker_chain()
-    run_worker(chain, [(1, "Hola."), (2, "¿Qué tal?")])
+    run_worker(chain, [(1, "Hola.", 0.0), (2, "¿Qué tal?", 0.0)])
     assert played == [(b"\x00\x01", 16000), (b"\x00\x01", 16000)]
 
 
 def test_off_or_too_far_behind_they_are_only_read():
     chain, played, _ = worker_chain(on=False)
-    run_worker(chain, [(1, "Hola.")])
+    run_worker(chain, [(1, "Hola.", 0.0)])
     assert played == []
     chain, played, events = worker_chain(behind=speaker.MAX_BEHIND_S + 1)
-    run_worker(chain, [(1, "Hola.")])
+    run_worker(chain, [(1, "Hola.", 0.0)])
     assert played == [] and events == [("tts", {"channel": "in", "seq": 1, "skipped": "behind"})]
 
 

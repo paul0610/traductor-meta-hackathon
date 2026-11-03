@@ -1,4 +1,4 @@
-"""The other side's words in Spanish on my headphones, and the gate that keeps the app from hearing itself.
+"""The other side's words in Spanish out loud, and the gate that keeps the app from hearing itself.
 
 The subtitles come from the loopback of the default output, and this voice plays there too. So while it
 speaks, and for a short tail after, `Gate` hands the ASR silence in place of what the loopback hears:
@@ -21,6 +21,8 @@ from . import devices
 
 GATE_TAIL_S = 0.4              # the loopback hands a block over a little after it played
 MAX_BEHIND_S = 6.0             # a clause that would start later than this is only read: the voice must not drift
+MAX_LATE_S = 6.0               # nor one that would start this long after they said it: the talk has moved on, and
+                               # on speakers it would close my mic just as I answer (a slow Spark, Nov 3: 7.4 s)
 
 
 class SpeakerVoice:

@@ -18,6 +18,7 @@ class Phase(str, Enum):
     READY = "LISTO"            # nothing is captured yet: no audio leaves this PC
     STARTING = "CONECTANDO"    # the ASR and the camera are on their way; what is said meanwhile waits in the queue
     LIVE = "EN VIVO"
+    LISTENING = "MIC EN ESPERA"   # on speakers the PC is playing, so the mic waits (`audio/room.py`)
     PAUSED = "PAUSADO"         # they took the floor
     MUTED = "MUDO"             # F8: nothing reaches the other side
     RAW = "VOZ CRUDA"          # F9
@@ -30,7 +31,9 @@ SOUNDS = {Phase.READY: "ready", Phase.LIVE: "live", Phase.PAUSED: "floor", Phase
 
 
 def sound_for(before: Phase, after: Phase) -> str | None:
-    """Only a change makes a sound, and getting the floor back is not news."""
+    """Only a change makes a sound, and getting the floor back is not news. Nor is the mic waiting: on speakers
+    it comes and goes with every sentence, and a cue there would be one more sound for it to wait out."""
+    before, after = (Phase.LIVE if p is Phase.LISTENING else p for p in (before, after))
     if before is after or (before is Phase.PAUSED and after is Phase.LIVE):
         return None
     return "back" if before in (Phase.MUTED, Phase.RAW) and after is Phase.LIVE else SOUNDS.get(after)
@@ -51,7 +54,7 @@ def health(lag_s: float | None, sync_s: float, delay_s: float) -> Health:
     return Health.OK if value <= ok else Health.WARN if value <= warn else Health.BAD
 
 
-def running(*, raw: bool, muted: bool, held: bool, connected: bool) -> Phase:
+def running(*, raw: bool, muted: bool, held: bool, connected: bool, waiting: bool = False) -> Phase:
     """What the other side is really getting goes first: raw voice or silence outrank anything else going on."""
     if raw:
         return Phase.RAW
@@ -59,7 +62,9 @@ def running(*, raw: bool, muted: bool, held: bool, connected: bool) -> Phase:
         return Phase.MUTED
     if held:
         return Phase.PAUSED
-    return Phase.LIVE if connected else Phase.STARTING
+    if not connected:
+        return Phase.STARTING
+    return Phase.LISTENING if waiting else Phase.LIVE
 
 
 def metrics_line(*, lags: list[float], sync_s: float, delay_s: float, late: bool, corrections: int, theirs: bool,

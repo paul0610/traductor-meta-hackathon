@@ -35,6 +35,10 @@ class SpeechOnsets:
         self._threshold = (room + voice) / 2 if voice - room >= MIN_RANGE_DB else None      # halfway between them in dB
 
     def feed(self, t_capture: float, block: np.ndarray) -> None:
+        if not block.any():                          # the mic gated on speakers: quiet, but not the room's level
+            self._quiet += 1
+            self._loud = 0
+            return
         level = 10 * np.log10(float(np.mean(block ** 2)) + 1e-12)
         self._levels.append(level)
         self._blocks += 1

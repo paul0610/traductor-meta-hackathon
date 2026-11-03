@@ -30,8 +30,10 @@ def read_wav(path: str | Path) -> bytes:
 
 
 async def replay(pcm: bytes, q: asyncio.Queue, stop: asyncio.Event,
-                 tap: Callable[[float, bytes], None] | None = None) -> None:
-    """Real time against an absolute schedule, so `t_capture` is exact by construction."""
+                 tap: Callable[[float, bytes], None] | None = None,
+                 gate: Callable[[float], bool] | None = None) -> None:
+    """Real time against an absolute schedule, so `t_capture` is exact by construction. `gate` stands for the
+    mic's on speakers: silence of the same length while it says so."""
     t_start = now() + 0.05
     step = BLOCK * 2
     for k, i in enumerate(range(0, len(pcm), step)):
@@ -40,6 +42,8 @@ async def replay(pcm: bytes, q: asyncio.Queue, stop: asyncio.Event,
         if delay > 0:
             await asyncio.sleep(delay)
         chunk = pcm[i:i + step]
+        if gate is not None and gate(t_cap):
+            chunk = bytes(len(chunk))
         if tap is not None:
             tap(t_cap, chunk)
         await q.put((t_cap, chunk))

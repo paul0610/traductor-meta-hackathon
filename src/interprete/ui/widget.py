@@ -28,11 +28,13 @@ RING_PX = 8
 DRAG_PX = 4                    # moved less than this, it was a click
 PLACES = "logs/widget.ini"
 RING = {Health.NONE: "#6b7280", Health.OK: "#30a46c", Health.WARN: "#f5a623", Health.BAD: "#e5484d"}
-FIXED = {Phase.LOADING: "#6b7280", Phase.READY: "#8fd3ff", Phase.STARTING: "#8fd3ff", Phase.PAUSED: "#e5484d",
-         Phase.MUTED: "#e5484d", Phase.RAW: "#f5a623", Phase.STOPPING: "#6b7280", Phase.OFF: "#3f4650"}
+FIXED = {Phase.LOADING: "#6b7280", Phase.READY: "#8fd3ff", Phase.STARTING: "#8fd3ff", Phase.LISTENING: "#8fd3ff",
+         Phase.PAUSED: "#e5484d", Phase.MUTED: "#e5484d", Phase.RAW: "#f5a623", Phase.STOPPING: "#6b7280",
+         Phase.OFF: "#3f4650"}
 GLYPH = {Phase.LOADING: "…", Phase.STARTING: "…", Phase.PAUSED: "❚❚", Phase.MUTED: "✕", Phase.RAW: "!", Phase.STOPPING: "…",
          Phase.OFF: "■"}
-RUNNING = (Phase.STARTING, Phase.LIVE, Phase.PAUSED, Phase.MUTED, Phase.RAW)
+RUNNING = (Phase.STARTING, Phase.LIVE, Phase.LISTENING, Phase.PAUSED, Phase.MUTED, Phase.RAW)
+LAG_SHOWN = (Phase.LIVE, Phase.LISTENING, Phase.PAUSED)
 CALL_COLOR = {"live": "#8fd3ff", "done": "#d6d9de", "failed": "#e5484d"}
 PANEL_PAD = 12
 PANEL_TICK_MS = 200            # the seconds of a call still out count up on screen
@@ -121,7 +123,7 @@ class Button(_Floating):
     def _centre(self) -> str:
         if self.phase is Phase.READY:
             return "▶"
-        if self.phase in (Phase.LIVE, Phase.PAUSED) and self.lag_s is not None:
+        if self.phase in LAG_SHOWN and self.lag_s is not None:
             return f"{self.lag_s:.1f}"
         return GLYPH.get(self.phase, "–")
 
