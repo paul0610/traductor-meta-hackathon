@@ -17,7 +17,7 @@ import soxr
 
 from ..clock import now
 from .shaping import TtsResult, isochrony_pct, trim_silence
-from .spoken import spoken
+from .spoken import spoken, spoken_es
 from .stretch import wsola
 
 RATE = 16000
@@ -57,8 +57,9 @@ def load_model(model: str, threads: int) -> Callable[[str, float], np.ndarray]:
 
 class MmsVoice:
     def __init__(self, model: str, out_rate: int, *, speaking_rate: float = SPEAKING_RATE, threads: int = THREADS,
-                 load: Callable = load_model) -> None:
+                 load: Callable = load_model, words: Callable[[str], str] | None = None) -> None:
         self.model = model
+        self.words = words or (spoken_es if model.endswith("-spa") else spoken)
         self.out_rate = out_rate
         self.speaking_rate = speaking_rate
         self.threads = threads
@@ -83,7 +84,7 @@ class MmsVoice:
         return isochrony_pct(spoken(text), src_s, *self.pace)
 
     def _synth(self, text: str, rate_pct: int, t_request: float) -> TtsResult:
-        words = spoken(text)
+        words = self.words(text)
         with self._one_at_a_time:
             x = self.speak(words, self.speaking_rate) if words else np.zeros(0, np.float32)
         t_end = now()

@@ -41,6 +41,7 @@ from .audio.loopback import LoopbackCapture
 from .audio.onsets import SpeechOnsets
 from .audio.recorder import Recorder
 from .audio.ring import Ring
+from .audio.speaker import MAX_BEHIND_S, Gate, SpeakerVoice
 from .clock import now
 from .contracts import AsrEvent, AsrKind, Channel, Commit, PcmChunk
 from .metrics.jsonl import Metrics, read
@@ -78,6 +79,8 @@ READY_EN = "Nothing leaves this PC until you click the round button."
 STD_INPUT_HANDLE = -10
 ENABLE_QUICK_EDIT_MODE = 0x0040
 ENABLE_EXTENDED_FLAGS = 0x0080
+VOICE_IN_MODEL = "facebook/mms-tts-spa"
+VOICE_IN_RATE = 1.3              # a little quicker than MMS's own pace: Spanish takes more syllables than the English
 LIPS_LEAD_S = 5                 # first word to its English with no dub: p50 5.0 s in a real call, Nov 2
 SIM_LINES = [
     ("Buenos días, gracias por recibirme.", "Good morning, thanks for having me."),
@@ -122,7 +125,7 @@ class NoUi:
     """Stands in for the screen in `--no-overlay` runs."""
 
     def __getattr__(self, name):
-        return lambda *a: None
+        return lambda *a, **k: None
 
     async def go(self, stop: asyncio.Event) -> None:
         pass
@@ -460,6 +463,8 @@ class Outgoing:
         notes = " │ ASR CAÍDO" if self.asr is not None and self.asr.t_down is not None else ""
         if self.incoming is not None and self.incoming.asr is not None and self.incoming.asr.t_down is not None:
             notes += " │ SUBTÍTULOS CAÍDOS"
+        if self.incoming is not None and self.incoming.voice_on and self.incoming.voice_es is not None:
+            notes += " │ VOZ ES"
         notes += f"{self.cable_warning}{self.video_warning}"
         if not self.metrics.ok:
             notes += " │ SIN MÉTRICAS"
@@ -564,7 +569,7 @@ class Outgoing:
 
 
 class Incoming:
-    def __init__(self, args, metrics: Metrics, ui, stop: asyncio.Event) -> None:
+    def __init__(self, args, metrics: Metrics, ui, stop: asyncio.Event, *, voice_in: bool = False) -> None:
         self.args = args
         self.emit = metrics.emit
         self.ui = ui
@@ -581,6 +586,11 @@ class Incoming:
         self.pending = 0
         self.loopback: LoopbackCapture | None = None
         self.asr: MetaRealtimeAsr | None = None
+        self.voice_in = voice_in                     # their words in Spanish too; F6 flips voice_on while it runs
+        self.voice_on = voice_in
+        self.speaker: SpeakerVoice | None = None
+        self.voice_es: MmsVoice | None = None
+        self.q_say: asyncio.Queue[tuple[int, str]] = asyncio.Queue()
         self.spark: Spark | None = None
         self.policy: Consecutive | None = None
 
@@ -593,7 +603,10 @@ class Incoming:
     def start_audio(self) -> None:
         if self.args.wav_in:
             return
-        self.loopback = LoopbackCapture(QueueFeeder(self.loop, self.q_pcm), emit=self.emit)
+        feed = QueueFeeder(self.loop, self.q_pcm)
+        if self.voice_in:                            # the voice plays where the loopback listens: deaf while it speaks
+            feed = Gate(feed, lambda t: self.speaker is not None and self.speaker.deaf(t))
+        self.loopback = LoopbackCapture(feed, emit=self.emit)
         self.loopback.start()
 
     def idle(self) -> bool:
@@ -647,17 +660,74 @@ class Incoming:
             self.ui.their_translation(self.turn_text)
             show_call(f"Muse Spark en→es {r.t_end - r.t_start:4.1f} s", r.translation)
             self.ui.call_end(call, r.translation)
+            if self.voice_on and self.voice_es is not None:
+                self.q_say.put_nowait((c.seq, r.translation))
             row.update(t_mt=r.t_end, t_shown=now(), mt_s=r.t_end - r.t_start, text_tgt=r.translation)
             self.emit("mt", channel="in", seq=c.seq, utterance_id=c.utterance_id, t_mt=r.t_end, mt_s=r.t_end - r.t_start,
                       text_tgt=r.translation, mt_calls_per_commit=1, reasoning_tokens=r.reasoning_tokens, effort=r.effort)
             self.pending -= 1
 
+    async def load_voice(self) -> None:
+        """After LISTO, so the start is never slower for it; until it is ready, their words are only read."""
+        if not self.voice_in:
+            return
+        row = ("tts", "load", "es")
+        self.ui.call_start(row, "MMS-TTS, this CPU", "es", "loading Meta's open weights")
+        try:
+            speaker = SpeakerVoice()
+            voice = MmsVoice(VOICE_IN_MODEL, speaker.rate, speaking_rate=VOICE_IN_RATE)
+            await voice.start()
+            speaker.start()
+        except Exception as exc:
+            self.ui.call_end(row, f"{type(exc).__name__}: subtitles only", failed=True)
+            self.emit("state", what="voice_in", error=f"{type(exc).__name__}: {exc}"[:300])
+            return
+        self.speaker, self.voice_es = speaker, voice
+        self.ui.call_end(row, f"voice ready: {VOICE_IN_MODEL}")
+        self.emit("state", what="voice_in", ready=True, device=speaker.device.name)
+
+    def toggle_voice(self) -> None:
+        """F6: their words in Spanish on or off; off drops what has not played yet."""
+        self.voice_on = not self.voice_on
+        if not self.voice_on and self.speaker is not None:
+            self.speaker.hush()
+        self.emit("state", what="voice_in", on=self.voice_on)
+        self.ui.mine("Voz en español " + ("encendida." if self.voice_on else "apagada: solo subtítulos."))
+
+    async def say_worker(self) -> None:
+        """Their clauses in Spanish, in order. One that would start too late is only read: the voice must not drift."""
+        while True:
+            seq, text = await self.q_say.get()
+            if not self.voice_on or self.voice_es is None or self.speaker is None:
+                continue
+            if self.speaker.behind_s() > MAX_BEHIND_S:
+                self.emit("tts", channel="in", seq=seq, skipped="behind")
+                continue
+            call = ("tts", "in", seq)
+            self.ui.call_start(call, "MMS-TTS, this CPU", "es", text)
+            try:
+                r = await asyncio.wait_for(self.voice_es.say(text), TTS_TIMEOUT_S)
+            except Exception as exc:
+                self.ui.call_end(call, f"{type(exc).__name__}: only read", failed=True)
+                self.emit("tts", channel="in", seq=seq, error=f"{type(exc).__name__}: {exc}"[:300])
+                continue
+            self.ui.call_end(call, failed=not r.pcm)
+            if r.pcm and self.voice_on:
+                t_end = self.speaker.play(r.pcm, r.sample_rate)
+                self.emit("tts", channel="in", seq=seq, synth_s=r.t_end - r.t_request, duration_s=r.duration_s,
+                          t_play_end=t_end)
+
     def tasks(self) -> dict:
-        return {"in.mt": self.mt_worker(), "in.asr": self.asr.run(self.q_pcm, self.on_asr_event, self.stop)}
+        tasks = {"in.mt": self.mt_worker(), "in.asr": self.asr.run(self.q_pcm, self.on_asr_event, self.stop)}
+        if self.voice_in:
+            tasks["in.say"] = self.say_worker()
+        return tasks
 
     async def close(self) -> None:
         if self.loopback is not None:
             self.loopback.stop()
+        if self.speaker is not None:
+            self.speaker.stop()
 
     def report(self) -> None:
         for r in self.rows.values():
@@ -674,7 +744,9 @@ class App:
         self.stop = asyncio.Event()
         self.loop = asyncio.get_running_loop()
         self.out = None if args.in_only else Outgoing(args, settings, metrics, ui, self.stop)
-        self.inc = None if args.out_only or args.simulate else Incoming(args, metrics, ui, self.stop)
+        # fixtures stand in for the loopback, so there is nothing to keep the voice out of; the gates run without it
+        voice_in = settings.voice_in and (not args.wav_in or args.voice_in)
+        self.inc = None if args.out_only or args.simulate else Incoming(args, metrics, ui, self.stop, voice_in=voice_in)
         if self.out is not None and self.inc is not None:
             self.inc.conversation = self.out.conversation
             self.out.incoming = self.inc
@@ -718,6 +790,8 @@ class App:
             self.loop.call_soon_threadsafe(fn)
 
         keyboard.add_hotkey("f10", on_loop, args=(lambda: self.loop.create_task(self.on_f10()),))
+        if self.inc is not None and self.inc.voice_in:
+            keyboard.add_hotkey("f6", on_loop, args=(self.inc.toggle_voice,))
         if self.out is not None:
             keyboard.add_hotkey("f9", self.on_f9)
             keyboard.add_hotkey("f8", self.out.mixer.toggle_mute)
@@ -782,6 +856,8 @@ class App:
             await self.out.open_camera()             # LISTO already offers the camera to the call, with the card on it
         if self.spark is not None:
             await self.warm()
+        if self.inc is not None:
+            self._task("in.voice", self.inc.load_voice())
 
     async def shut(self) -> None:
         self.guard.run()
@@ -936,6 +1012,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     ap.add_argument("--wav-out", default=None, help="16 kHz WAV replayed instead of the mic")
     ap.add_argument("--wav-in", default=None, help="16 kHz WAV replayed instead of the loopback")
     ap.add_argument("--notice", action="store_true", help="play the initial notice at start, as F7 does")
+    ap.add_argument("--voice-in", action="store_true", help="their words in Spanish on the headphones even with --wav-in")
     return ap.parse_args(argv)
 
 

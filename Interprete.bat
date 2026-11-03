@@ -16,7 +16,7 @@ if not exist ".env" (
     goto end
 )
 
-echo Interprete ES-EN    F7 AI notice    F8 mute    F9 your raw voice on/off    F10 physical mic    Ctrl-C quit
+echo Interprete ES-EN    F6 Spanish voice on/off    F7 AI notice    F8 mute    F9 raw voice    F10 physical mic    Ctrl-C quit
 echo In the call, pick "CABLE Output" as the microphone: only English reaches the other side.
 echo With the dub (RTT_DUB=1), also pick "OBS Virtual Camera" as the camera, and keep OBS closed.
 echo Loading takes about 20 s. Nothing leaves this PC until you click the round button, top right.

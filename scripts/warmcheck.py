@@ -103,6 +103,19 @@ async def check_mms(s: config.Settings) -> None:
         report("FAIL", "MMS-TTS", repr(exc)[:200])
 
 
+async def check_voice_in() -> None:
+    """Their words in Spanish, with RTT_VOICE_IN=1: the second voice, said once, not played."""
+    t0 = time.perf_counter()
+    try:
+        voice = MmsVoice("facebook/mms-tts-spa", 48000, speaking_rate=1.3)
+        await voice.start()
+        r = await voice.say("Prueba de la voz en español.")
+        report("OK" if r.pcm else "FAIL", "MMS-TTS es", f"{voice.name}: ready in {time.perf_counter() - t0:.0f} s, "
+               f"a sentence in {r.t_ready - r.t_request:.2f} s")
+    except Exception as exc:
+        report("FAIL", "MMS-TTS es", repr(exc)[:200])
+
+
 async def check_meta(key: str) -> None:
     try:
         r = await Spark(key, timeout_s=8.0).translate("La entrevista comienza ahora.")
@@ -128,6 +141,8 @@ async def main() -> int:
     if s.dub:
         check_camera(s)
     await check_mms(s)
+    if s.voice_in:
+        await check_voice_in()
     if s.api_key:
         report("OK", "MODEL_API_KEY")
         await check_meta(s.api_key)

@@ -1,6 +1,6 @@
 # traductor-meta-hackathon
 
-**OS-level simultaneous interpreter, Spanish ⇄ English, for any video call**, built on Meta's **Muse Voice Transcribe** (realtime ASR), **Muse Spark** (translation) and **MMS-TTS** (the voice). You speak Spanish, or Spanglish, into your normal microphone and the other side hears fluent English. They speak English and you read Spanish subtitles.
+**OS-level simultaneous interpreter, Spanish ⇄ English, for any video call**, built on Meta's **Muse Voice Transcribe** (realtime ASR), **Muse Spark** (translation) and **MMS-TTS** (the voice). You speak Spanish, or Spanglish, into your normal microphone and the other side hears fluent English. They speak English and you hear their words in Spanish on your headphones, and read them as subtitles.
 
 **Any meeting app, one setting.** It runs beside the call app, at the level of Windows, not inside it, so it is meant for all of them: Google Meet, Microsoft Teams, Zoom, Webex, Discord, or any other app that lets you pick a microphone. **The only thing to set in the call app is the microphone: `CABLE Output`**, the virtual microphone that carries the English. No plugin, no extension, and nothing to install on the other side. Your headphones stay as they are: the app subtitles whatever the call plays on them. With the [synchronized dub](#7-synchronized-dub-optional), also pick `OBS Virtual Camera` as the camera. Tested with Google Meet; the others take a microphone the same way, but were not tried.
 
@@ -27,12 +27,13 @@ Work in progress during the hackathon week. Daily logs with measured numbers liv
 | One-button widget and draggable metrics line | done, and used in the Google Meet calls of Nov 2; F7 and F10 not yet pressed in a call |
 | Meta end to end: MMS-TTS on this PC is the voice | done, judged by ear and measured with a real voice; heard on a phone through Google Meet, Nov 2 |
 | Setup assistant: `Install.bat`, with Muse Spark driving a fixed set of tools | done; run on this PC with real Spark, every change declined, Nov 2; not yet tried on a clean PC |
+| Their words in Spanish on my headphones (MMS-TTS Spanish), the app deaf to the loopback while it speaks | done; run on the fixtures into a file, Nov 3: 13 clauses, 0.25 to 0.97 s each to synthesize; not yet heard in a call |
 
 ## How it works (short)
 
 ```
 OUT: mic ─► Muse Voice Transcribe (es) ─► clause commits ─► Muse Spark (es→en) ─► MMS-TTS (local) ─► scheduler ─► VB-CABLE ─► call app
-IN:  system loopback ─► Muse Voice Transcribe (en) ─► Muse Spark (en→es) ─► subtitle overlay
+IN:  system loopback ─► Muse Voice Transcribe (en) ─► Muse Spark (en→es) ─► subtitle overlay + MMS-TTS (es, local) ─► headphones
 SETUP: Install.bat ─► uv sync ─► Muse Spark picks the next tool (tool calling) ─► fixed tools ask you, then act ─► warmcheck
 ```
 
@@ -44,17 +45,18 @@ Design, contracts, clock model and safety rules: [`docs/SPEC.md`](docs/SPEC.md).
 |---|---|---|---|
 | Muse Voice Transcribe (`muse-voice-transcribe-1.0`) | Hears both sides as they speak: partial text, the end of each turn, and timing events that decide when a clause is ready and when it must play | Meta Model API, realtime WebSocket `wss://api.meta.ai/v1/asr/realtime`, 16 kHz PCM | [`asr/meta_realtime.py`](src/interprete/asr/meta_realtime.py) |
 | Muse Spark (`muse-spark-1.3`) | Translates each clause both ways, with the whole conversation and the glossary; drives the setup assistant with tool calls | Meta Model API, chat completions at `https://api.meta.ai/v1`: structured output with `reasoning_effort` minimal to translate, tools with low in the setup | [`mt/spark.py`](src/interprete/mt/spark.py), [`mt/context.py`](src/interprete/mt/context.py), [`setup/assistant.py`](src/interprete/setup/assistant.py) |
-| MMS-TTS (`facebook/mms-tts-eng`) | Speaks the English | Open weights through `transformers`, on this PC's CPU, 4 threads | [`tts/mms.py`](src/interprete/tts/mms.py) |
+| MMS-TTS (`facebook/mms-tts-eng`, `facebook/mms-tts-spa`) | Speaks my English to the other side, and their words in Spanish to me | Open weights through `transformers`, on this PC's CPU, 4 threads each | [`tts/mms.py`](src/interprete/tts/mms.py), [`audio/speaker.py`](src/interprete/audio/speaker.py) |
 
 Every call shows on screen as it runs, in the Meta panel: which model, how long it has been out or how long it took, and what it returned, from the moment the voice starts loading. Blue is a call still out, white one that returned, red one that failed. The console prints the same, such as `Muse Spark es→en  1.2 s │ Sure. In my last project…`, and every run writes each call with its timing to `logs/app_<date>_<time>.jsonl`.
 
 ![The Meta panel during a run on the synthetic interview: Muse Voice Transcribe hearing, Muse Spark translating both ways, MMS-TTS speaking on the CPU](docs/img/meta_panel.png)
 
-`scripts/make_fixtures.py` also uses `facebook/mms-tts-spa`, for test voices only.
+`scripts/make_fixtures.py` also makes the test voices with both models.
 
 Honest notes:
 - **Meta's Model API has no text-to-speech model** (checked against the docs, the live model list and the cookbook on Oct 30), so the voice is Meta's open-weight MMS-TTS on this PC. The voice is plain and single-speaker, chosen because the rules require Meta models end to end. It has no backup: nothing that is not Meta's runs, even when something fails.
 - The interpreter requires Windows 11, [VB-CABLE](https://vb-audio.com/Cable/) and headphones (with speakers the mic would re-translate the other side's voice).
+- **Their words in Spanish cost a little of what they say.** The Spanish voice plays where the app listens, on the headphones, so while it speaks, and 0.4 s after, the app hears nothing: what they say in that moment gets neither a subtitle nor a voice. In a call of questions and answers it rarely matters; F6 turns the voice off, and `RTT_VOICE_IN=0` starts without it.
 
 ## Manual (Windows 11)
 
@@ -78,7 +80,7 @@ Written so you can repeat on your PC what was tested on mine. The interface spea
 - **An internet connection.** Muse Voice Transcribe and Muse Spark run on Meta's Model API.
 - **A Meta API key** from [dev.meta.ai](https://dev.meta.ai), for Muse Voice Transcribe and Muse Spark. It is the only account the project needs: VB-CABLE, OBS Studio, FFmpeg, uv, Git and the download of the voice ask for none.
 - **A call app that lets you choose the microphone.** Tested with Google Meet in the browser. Zoom, Teams and others let you choose it too, but were not tried.
-- **About 1.3 GB of disk:** 1.1 GB for the Python packages and 150 MB for the voice.
+- **About 1.4 GB of disk:** 1.1 GB for the Python packages and 300 MB for the two voices.
 - **Only for the [synchronized dub](#7-synchronized-dub-optional):** a webcam, OBS Studio and FFmpeg.
 
 You do not need to speak Spanish: [section 5](#5-try-it-alone) has phrases to read aloud.
@@ -155,7 +157,7 @@ OBS Studio is there only for its virtual camera driver: leave it closed. FFmpeg 
 uv run python scripts/warmcheck.py
 ```
 
-It tries for real everything a call needs, and changes nothing: your microphone, both ends of VB-CABLE and their volume, the default output, the capture of the system audio, the voice, and your key against Muse Spark and Muse Voice Transcribe; with the dub on, also the webcam and the virtual camera. The first time it downloads the voice, about 150 MB; after that it takes under a minute. Each line starts with `OK`, `WARN` or `FAIL`, each `WARN` and `FAIL` says what to change, and the last line is `READY FOR A CALL` or the number of failures.
+It tries for real everything a call needs, and changes nothing: your microphone, both ends of VB-CABLE and their volume, the default output, the capture of the system audio, both voices, and your key against Muse Spark and Muse Voice Transcribe; with the dub on, also the webcam and the virtual camera. The first time it downloads the voices, about 300 MB; after that it takes about a minute. Each line starts with `OK`, `WARN` or `FAIL`, each `WARN` and `FAIL` says what to change, and the last line is `READY FOR A CALL` or the number of failures.
 
 Two more checks, optional: `uv run python scripts/test_cable.py` plays five English sentences into `CABLE Input` and checks they come out whole on `CABLE Output`, and `uv run python scripts/asr_live.py` sends your microphone to Muse Voice Transcribe and prints what it hears.
 
@@ -170,7 +172,7 @@ Two more checks, optional: `uv run python scripts/test_cable.py` plays five Engl
 
    In Google Meet they are under *More options › Settings*, in *Audio* and *Video*.
 4. **Click the button.** It says `CONECTANDO` (connecting), then `EN VIVO` (live). Speak Spanish: the other side hears English about 5 s after you start each phrase, and under 4 s after you end it. The console shows each step as it happens: `[es]` is what Muse Voice Transcribe heard, `[en]` what Muse Spark made of it.
-5. **When they speak English,** the band shows their words in grey and the Spanish in white, and the console prints them as `[them]` and `[sub]`.
+5. **When they speak English,** the band shows their words in grey and the Spanish in white, and right after each subtitle you hear it in Spanish on your headphones. F6 turns that voice off and on.
 6. **To finish,** let the English end first, about 5 s after your last word (7 s with the dub), and click the button. It stops on `APAGADO` (off), and if `CABLE Output` had become the Windows default microphone, it puts yours back. A right click stops it from any state, and so does Ctrl-C in the console. The console then prints a summary of the run and the path of its log in `logs/`.
 
 ### 5. Try it alone
@@ -185,7 +187,7 @@ No second person needed.
 .\Interprete.bat --record-cable
 ```
 
-Click the button and say a few phrases in Spanish. Then stop talking and play an English video in the browser: the band subtitles it in Spanish, because the app subtitles whatever the PC plays. Stop it with the button. The console prints `cable recording: logs\cable_app_<date>_<time>.wav`: play that file to hear exactly what a call would have received.
+Click the button and say a few phrases in Spanish. Then stop talking and play an English video in the browser: the band subtitles it in Spanish, and the Spanish voice says it, because the app takes whatever the PC plays. While that voice speaks the app hears nothing, so with a video that never pauses press F6 to only read it. Stop it with the button. The console prints `cable recording: logs\cable_app_<date>_<time>.wav`: play that file to hear exactly what a call would have received.
 
 **If you do not speak Spanish,** read these aloud, or play a Spanish video from your phone next to the microphone. Spark's wording varies; the meaning should match.
 
@@ -215,6 +217,7 @@ Click the button and say a few phrases in Spanish. Then stop talking and play an
 
 | Key | Action |
 |---|---|
+| F6 | Their words in Spanish on your headphones, on or off; the subtitles stay |
 | F7 | Tell the other side they are hearing an AI interpreter |
 | F8 | Mute everything / unmute |
 | F9 | Your raw voice on the cable, latched; F9 again to interpret again |
@@ -233,7 +236,7 @@ Your raw voice goes out alone only with F9, or by itself when the ASR is down fo
 | `ES→EN` | What the cable carries: `EN ESPERA` (standby), `VOZ` (the English voice), `DOBLAJE` (the dub), `VOZ CRUDA`, `MUDO` or `APAGADO` |
 | `META` | Minutes since the click, the time Meta's API has been in use |
 
-Problems show on it and stay: `ASR CAÍDO` (ASR down), `SUBTÍTULOS CAÍDOS` (subtitles down), `SIN CÁMARA RETRASADA` (no delayed camera), `SIN MÉTRICAS` (no metrics), or the name of a task that died. `CABLE 22 %` or `PYTHON 3 %` means a Windows volume slider is low: see [Troubleshooting](#9-troubleshooting). With the dub, `TARDE: reinicia con D 7.5` means the voice keeps reaching your lips late: restart with `RTT_DELAY_S=7.5`.
+`VOZ ES` at the end means the Spanish voice is on and loaded. Problems show on it and stay: `ASR CAÍDO` (ASR down), `SUBTÍTULOS CAÍDOS` (subtitles down), `SIN CÁMARA RETRASADA` (no delayed camera), `SIN MÉTRICAS` (no metrics), or the name of a task that died. `CABLE 22 %` or `PYTHON 3 %` means a Windows volume slider is low: see [Troubleshooting](#9-troubleshooting). With the dub, `TARDE: reinicia con D 7.5` means the voice keeps reaching your lips late: restart with `RTT_DELAY_S=7.5`.
 
 **The Meta panel,** under the metrics line, also draggable: one row per call to Meta's models, the latest at the bottom. Muse Voice Transcribe shows `listening` while it hears a turn and `heard` at its end; Muse Spark and MMS-TTS count their seconds while out, then keep their time and what they returned. It starts with the voice loading and Spark's first call, before the click. `RTT_META_PANEL=0` hides it.
 
@@ -269,6 +272,7 @@ They live in `.env`, and `.env.example` explains each one. The ones you may need
 | `RTT_MMS_SPEAKING_RATE` | `1.45` | The pace of the English voice; lower is calmer, and the English then outlasts the Spanish |
 | `RTT_SOUNDS` | `1` | `0` silences the cues |
 | `RTT_META_PANEL` | `1` | `0` hides the panel of live calls to Meta's models |
+| `RTT_VOICE_IN` | `1` | `0` starts with their words only as subtitles, no Spanish voice (F6 switches it during the call) |
 | `RTT_OVERLAY_HIDE_FROM_CAPTURE` | `0` | `1` keeps the band out of screen shares and recordings |
 | `RTT_GLOSSARY` | `glossary.txt` | You want terms rendered one way: copy `glossary.example.txt` to `glossary.txt` |
 | `RTT_MODE` | `incremental` | `consecutive` waits for whole turns, the reliable fallback |
@@ -289,6 +293,7 @@ They live in `.env`, and `.env.example` explains each one. The ones you may need
 | They hear their own voice in English, or an echo | Use headphones, and make sure the default output is not `CABLE Input` |
 | No subtitles | The call must play on the Windows default output, which is where the app listens. If a service is down, the metrics line says `ASR CAÍDO` or `SUBTÍTULOS CAÍDOS` |
 | Music or videos get subtitled | Everything the PC plays does: close them during the call |
+| Some of what they say never gets a subtitle | The Spanish voice was speaking, and the app hears nothing meanwhile. F6 turns the voice off |
 | The last words never arrive | Wait for the English, about 5 s (7 s with the dub), before muting or hanging up |
 | The band says `OBS Virtual Camera did not start` | Install OBS Studio ([step 2.6](#2-install)), close it if it is open, and start again |
 | The call says the camera is not available | With the dub, pick `OBS Virtual Camera` once the button says `LISTO`; without it, close other apps that use the webcam |
@@ -299,7 +304,7 @@ Every run writes one JSONL line per event to `logs/`; the console prints the fil
 ### 10. Uninstall
 
 - Delete the project folder: it holds the packages, `.env` and `logs/`. Delete the desktop shortcut too, `Interprete ES-EN`, if you made one.
-- Delete the voice, in `%USERPROFILE%\.cache\huggingface\hub\models--facebook--mms-tts-eng`.
+- Delete the voices, in `%USERPROFILE%\.cache\huggingface\hub\models--facebook--mms-tts-eng` and `models--facebook--mms-tts-spa` next to it.
 - VB-CABLE: run `VBCABLE_Setup_x64.exe` as administrator, click *Remove Driver* and restart Windows.
 - What you installed only for this: `uv cache clean` frees uv's downloads, and then `winget uninstall --id=astral-sh.uv -e`, and the same with `Git.Git`, `OBSProject.OBSStudio` and `Gyan.FFmpeg`.
 

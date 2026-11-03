@@ -306,7 +306,8 @@ def test_a_dead_task_stays_on_the_line():
 
 def test_what_is_down_shows_on_the_line():
     down = SimpleNamespace(t_down=5.0)
-    line = Outgoing.bar_text(chain(asr=down, incoming=SimpleNamespace(asr=down), metrics=SimpleNamespace(ok=False)), 6.0)
+    line = Outgoing.bar_text(chain(asr=down, incoming=SimpleNamespace(asr=down, voice_on=False, voice_es=None),
+                                   metrics=SimpleNamespace(ok=False)), 6.0)
     for word in ("ASR CAÍDO", "SUBTÍTULOS CAÍDOS", "SIN MÉTRICAS"):
         assert word in line
 

@@ -44,6 +44,17 @@ def default_mic() -> str:
     return ""
 
 
+def default_output() -> Device:
+    """Windows' default output on WASAPI: the headphones the call plays on, and the loopback listens to."""
+    for api in sd.query_hostapis():
+        if api["name"] == HOSTAPI_ORDER[0] and api["default_output_device"] >= 0:
+            i = api["default_output_device"]
+            d = sd.query_devices(i)
+            return Device(i, d["name"], api["name"], int(d["default_samplerate"]), d["max_input_channels"],
+                          d["max_output_channels"])
+    raise LookupError("no default output on WASAPI")
+
+
 def candidates(name_sub: str, kind: str, exclude: tuple[str, ...] = ()) -> list[Device]:
     """All endpoints whose name contains `name_sub`, best host API first. `kind` is "input" or "output".
 

@@ -72,3 +72,13 @@ def test_a_turn_being_heard_shows_listening_then_heard(clock):
     assert "listening" in log.rows()[0][1]
     log.end("t", "How did you handle it?")
     assert "heard" in log.rows()[0][1] and log.rows()[0][1].endswith("How did you handle it?")
+
+
+def test_the_console_run_takes_every_panel_call_the_screen_takes():
+    """--no-overlay has no panel: its stand-in took no keywords, and the first partial killed both ASR tasks."""
+    from interprete.app import NoUi
+
+    turn = HeardTurn(NoUi(), "in", "en")
+    turn.partial("Hello")
+    turn.complete("Hello there.")
+    NoUi().call_end(("mt", "in", 1), "Hola", failed=True)

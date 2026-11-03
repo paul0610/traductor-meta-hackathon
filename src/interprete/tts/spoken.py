@@ -81,6 +81,23 @@ def _letters(m: re.Match) -> str:
     return (SAID_AS_WORDS.get(m[1]) or " ".join(LETTERS[c] for c in m[1])) + (m[2] and "s")
 
 
+ES_LETTERS = set(" abcdefghijklmnopqrstuvxyzáéíñóúü")      # the Spanish voice's own: no w, and no digits it says well
+
+
+def _numero(m: re.Match) -> str:
+    digits = m.group().replace(".", "")                        # 2.500 is two thousand five hundred in Spanish
+    with _ONE_AT_A_TIME:
+        return f" {num2words(int(digits), lang='es')} "
+
+
+def spoken_es(text: str) -> str:
+    """Spanish as MMS's Spanish voice says it. It keeps tildes and ñ, so "año" stays "año"; numbers become words,
+    "%" becomes "por ciento", w is said as u, and anything else it cannot say becomes a space."""
+    text = re.sub(r"\d{1,3}(?:\.\d{3})+|\d+", _numero, text.replace("%", " por ciento"))
+    text = text.lower().replace("w", "u")
+    return " ".join("".join(c if c in ES_LETTERS else " " for c in text).split())
+
+
 def spoken(text: str) -> str:
     """Digits, symbols, accents and acronyms in words. Empty if nothing in it can be said."""
     text = unicodedata.normalize("NFC", text).replace("ñ", "ny").replace("Ñ", "Ny").replace("’", "'")
