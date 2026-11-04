@@ -261,10 +261,14 @@ class Tools:
 
         name = AudioUtilities.GetSpeakers().FriendlyName or ""
         turns = speakers_mode(config.load().speakers, name)
+        phones = devices.headphones_elsewhere(name)
+        note = ("speakers: the mic waits while the PC plays; RTT_SPEAKERS=0 if these are headphones" if turns
+                else "headphones: the person can talk over the other side")
+        if phones:
+            note = (f"{phones} is plugged in, but Windows plays on {name}: with them on, the person hears neither the "
+                    f"call nor the Spanish voice. Ask them to make {phones} the default output (open_settings sound)")
         return {"name": name, "is_cable": "CABLE" in name.upper(), "looks_like_headphones": devices.looks_like_headphones(name),
-                "call_goes_in_turns": turns,
-                "note": "speakers: the mic waits while the PC plays; RTT_SPEAKERS=0 if these are headphones" if turns
-                else "headphones: the person can talk over the other side"}
+                "call_goes_in_turns": turns, "headphones_elsewhere": phones, "note": note}
 
     def open_settings(self, page: str) -> dict:
         if page not in SETTINGS:

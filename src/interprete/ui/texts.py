@@ -36,6 +36,7 @@ ES = {
     "SPEAKERS": "PARLANTES",
     "NO METRICS": "SIN MÉTRICAS",
     "NO DELAYED CAMERA": "SIN CÁMARA RETRASADA",
+    "HEADPHONES NOT DEFAULT": "AUDÍFONOS NO PREDETERMINADOS",
     "ERROR {task}: raw voice on the cable": "ERROR {task}: voz cruda en el cable",
     "ERROR {task}: no subtitles": "ERROR {task}: sin subtítulos",
     "DUB D {d:.1f}s": "DOBLAJE D {d:.1f}s",
@@ -76,6 +77,12 @@ ES = {
     "Raise it to 100 in System > Sound > Volume mixer, with the app running.":
         "AVISO: Python está al {pct:.0f} % en el mezclador de volumen de Windows: el otro lado te oirá muy bajo. "
         "Súbelo a 100 en Sistema > Sonido > Mezclador de volumen, con la app en marcha.",
+    "WARNING: {phones} is connected, but Windows plays on {output}: the call, its subtitles and the Spanish voice "
+    "follow Windows' default output. Make {phones} the default in Settings > System > Sound > Output, leave the "
+    "meeting app's speaker on its default, and start again.":
+        "AVISO: {phones} está conectado, pero Windows suena por {output}: la llamada, sus subtítulos y la voz en "
+        "español siguen la salida predeterminada de Windows. Elige {phones} como predeterminada en Configuración > "
+        "Sistema > Sonido > Salida, deja el altavoz de la app de reuniones en el predeterminado y vuelve a empezar.",
     "FAILED": "FALLÓ",
 }
 

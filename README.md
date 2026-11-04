@@ -300,6 +300,8 @@ They live in `.env`, and `.env.example` explains each one. The ones you may need
 | What I say while they talk gets lost | On speakers the call goes in turns: the button says `MIC ON HOLD` while the PC plays. Speak on `LIVE`, press F6 to cut the Spanish voice short, or use headphones with `RTT_SPEAKERS=0` |
 | The button stays on `MIC ON HOLD` | Something keeps playing on the PC, such as music, a video or notifications: close it |
 | No subtitles | The call must play on the Windows default output, which is where the app listens. If a service is down, the metrics line says `ASR DOWN` or `SUBTITLES DOWN` |
+| No Spanish voice in your wired headphones, or the metrics line says `HEADPHONES NOT DEFAULT` | Many laptops list the headphone jack as an output of its own, such as *Auriculares* or *Headphones*, and Windows keeps playing on the speakers. Everything follows the Windows default output, so make the headphones the default in *Settings › System › Sound*, leave the meeting app's speaker on its default, and start the app again |
+| The Spanish voice skips a sentence | It is only read when you start answering before it plays: you already understood it. Wait for it, or read the subtitle |
 | Music or videos get subtitled | Everything the PC plays does: close them during the call |
 | Some of what they say never gets a subtitle | The Spanish voice was speaking, and the app hears nothing meanwhile. F6 turns the voice off |
 | The last words never arrive | Wait for the English, about 5 s (7 s with the dub), before muting or hanging up |

@@ -219,6 +219,7 @@ def fake_app(*, flag=False, wav=None, setting="auto"):
 def output(monkeypatch):
     name = ["Altavoces (Realtek(R) Audio)"]
     monkeypatch.setattr(app.devices, "default_output", lambda: Device(21, name[0], "Windows WASAPI", 48000, 0, 2))
+    monkeypatch.setattr(app.devices, "headphones_elsewhere", lambda output: None)     # this PC's jack is not the test's
     return name
 
 
@@ -248,6 +249,32 @@ def test_headphones_and_fixtures_need_no_room_unless_asked(output):
 def test_the_line_says_speakers(room, said):
     chain = SimpleNamespace(lags=[], sync_err=0.0, delay_s=0.0, sync_late=0, policy=None, floor=None,
                             mixer=SimpleNamespace(state=SimpleNamespace(value="SILENT")), cable_warning="",
-                            video_warning="", t_start=0.0, asr=None, incoming=None, metrics=SimpleNamespace(ok=True),
-                            fault="", room=room)
+                            output_warning="", video_warning="", t_start=0.0, asr=None, incoming=None,
+                            metrics=SimpleNamespace(ok=True), fault="", room=room)
     assert ("SPEAKERS" in app.Outgoing.bar_text(chain, 1.0)) is said
+
+
+def test_headphones_plugged_in_while_windows_plays_on_the_speakers_are_named(output, monkeypatch, capsys):
+    monkeypatch.setattr(app.devices, "headphones_elsewhere", lambda out: "Auriculares (Realtek(R) Audio)")
+    a, events = fake_app()
+    a.out.output_warning = ""
+    app.App.speakers(a)
+    assert {"what": "headphones_elsewhere", "headphones": "Auriculares (Realtek(R) Audio)", "output": output[0]} in events
+    assert a.out.output_warning == " │ HEADPHONES NOT DEFAULT"
+    assert "Auriculares (Realtek(R) Audio) is connected, but Windows plays on Altavoces" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("default, others, found", [
+    ("Altavoces (Realtek(R) Audio)", ["Auriculares (Realtek(R) Audio)"], "Auriculares (Realtek(R) Audio)"),
+    ("Auriculares (Realtek(R) Audio)", ["Altavoces (Realtek(R) Audio)"], None),      # already on them
+    ("Altavoces (Realtek(R) Audio)", ["CABLE Input (VB-Audio Virtual Cable)"], None),
+    ("Altavoces (Realtek(R) Audio)", ["Varios micrófonos (Realtek(R) Audio)"], None),  # an input
+    ("", ["Auriculares (Realtek(R) Audio)"], None),
+])
+def test_headphones_elsewhere_looks_only_at_other_wasapi_outputs(monkeypatch, default, others, found):
+    devs = [{"name": default, "max_output_channels": 2}] + [
+        {"name": n, "max_output_channels": 0 if "micr" in n else 2} for n in others]
+    monkeypatch.setattr(app.devices.sd, "query_hostapis",
+                        lambda: [{"name": "MME", "devices": [0]}, {"name": "Windows WASAPI", "devices": list(range(len(devs)))}])
+    monkeypatch.setattr(app.devices.sd, "query_devices", lambda i: devs[i])
+    assert app.devices.headphones_elsewhere(default) == found

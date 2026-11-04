@@ -35,6 +35,25 @@ def looks_like_headphones(name: str) -> bool:
     return any(h in name.lower() for h in HEADPHONE_HINTS)
 
 
+def headphones_elsewhere(output: str) -> str | None:
+    """Headphones on an endpoint of their own while Windows plays on another, as a Realtek jack often leaves them.
+
+    The call, the loopback that subtitles it and the Spanish voice all follow Windows' default output, so with
+    those headphones on, nothing the app plays or hears reaches the person.
+    """
+    if not output or looks_like_headphones(output):
+        return None
+    for api in sd.query_hostapis():
+        if api["name"] == HOSTAPI_ORDER[0]:
+            for i in api["devices"]:
+                d = sd.query_devices(i)
+                name = d["name"]
+                if d["max_output_channels"] > 0 and name != output and "CABLE" not in name.upper() \
+                        and looks_like_headphones(name):
+                    return name
+    return None
+
+
 def default_mic() -> str:
     """Windows' default input, cut to what MME keeps of a name so its duplicates match too. Never the cable."""
     for api in sd.query_hostapis():

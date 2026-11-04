@@ -168,6 +168,7 @@ class Outgoing:
         self.video: VirtualCam | None = None
         self.video_warning = ""
         self.cable_warning = ""
+        self.output_warning = ""
         self.opening = False                         # the camera takes seconds, off the loop
         self.fault = ""                              # a task that died: stays on the line, the rest of it keeps moving
         self.incoming: Incoming | None = None
@@ -486,7 +487,7 @@ class Outgoing:
             notes += f" │ {tr('EN→ES VOICE')}"
         if self.room is not None:
             notes += f" │ {tr('SPEAKERS')}"
-        notes += f"{self.cable_warning}{self.video_warning}"
+        notes += f"{self.cable_warning}{self.output_warning}{self.video_warning}"
         if not self.metrics.ok:
             notes += f" │ {tr('NO METRICS')}"
         line = metrics_line(lags=self.lags, sync_s=self.sync_err, delay_s=self.delay_s,
@@ -828,6 +829,14 @@ class App:
                 output = devices.default_output().name
             except LookupError:
                 pass
+            phones = devices.headphones_elsewhere(output)
+            if phones:                               # plugged in, but nothing the app plays or hears reaches them
+                self.emit("state", what="headphones_elsewhere", headphones=phones, output=output)
+                self.out.output_warning = f" │ {tr('HEADPHONES NOT DEFAULT')}"
+                print(tr("WARNING: {phones} is connected, but Windows plays on {output}: the call, its subtitles and "
+                         "the Spanish voice follow Windows' default output. Make {phones} the default in Settings > "
+                         "System > Sound > Output, leave the meeting app's speaker on its default, and start again.")
+                      .format(phones=phones, output=output), file=sys.stderr)
             if not speakers_mode(self.settings.speakers, output):
                 self.emit("state", what="speakers", on=False, output=output, setting=self.settings.speakers)
                 return None

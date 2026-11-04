@@ -69,6 +69,11 @@ def check_devices(s: config.Settings) -> None:
                                        "PC plays. Headphones by that name? RTT_SPEAKERS=0 lets you talk over them")
     else:
         report("OK", "default output", f"{out}, taken for headphones: you can talk over the other side")
+    phones = devices.headphones_elsewhere(out)
+    if phones:
+        report("WARN", "default output", f"{phones} is connected, but Windows plays on {out}: the call, its subtitles "
+                                         f"and the Spanish voice never reach them. Make {phones} the default in "
+                                         "Settings > System > Sound > Output")
     with pyaudio.PyAudio() as pa:
         try:
             d = pa.get_default_wasapi_loopback()

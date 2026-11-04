@@ -286,7 +286,7 @@ def test_three_late_clauses_propose_a_longer_delay():
 
 def chain(**over):
     fields = dict(lags=[2.0], sync_err=0.0, delay_s=0.0, sync_late=0, policy=SimpleNamespace(corrections_blocked=2), floor=None,
-                  mixer=SimpleNamespace(state=SimpleNamespace(value="TTS")), cable_warning="", video_warning="",
+                  mixer=SimpleNamespace(state=SimpleNamespace(value="TTS")), cable_warning="", output_warning="", video_warning="",
                   voice=SimpleNamespace(warning=""), t_start=0.0, asr=None, incoming=None, metrics=SimpleNamespace(ok=True),
                   fault="", room=None)
     return SimpleNamespace(**{**fields, **over})
