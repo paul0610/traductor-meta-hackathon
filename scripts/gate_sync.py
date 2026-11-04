@@ -176,6 +176,10 @@ def voice_delay(events: list[dict]) -> None:
     start = state(events, "fixture_start")
     if rec is None or start is None:
         return
+    under = next((e.get("voice_under_db") for e in events if e["ev"] == "run" and "voice_under_db" in e), None)
+    if under is None or under == float("-inf"):
+        print("voice under the dub: off (RTT_VOICE_UNDER_DB=-inf), nothing to measure on the cable")
+        return
     x, rate = read_recording(rec)
     ref = soxr.resample(np.frombuffer(read_wav(FIXTURE), "<i2").astype(np.float32) / 32768.0, RATE, rate)
     lag, peak = find_offset(x, ref)

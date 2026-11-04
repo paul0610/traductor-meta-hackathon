@@ -47,7 +47,7 @@ def load() -> Settings:
         cable_name=os.environ.get("RTT_CABLE_NAME", "CABLE Input"),
         mic_name=os.environ.get("RTT_MIC_NAME", ""),
         delay_s=float(os.environ.get("RTT_DELAY_S", "7.0")),
-        voice_under_db=float(os.environ.get("RTT_VOICE_UNDER_DB", "-20")),
+        voice_under_db=float(os.environ.get("RTT_VOICE_UNDER_DB", "-inf")),     # the other side hears only English
         av_offset_ms=float(os.environ.get("RTT_AV_OFFSET_MS", "0")),
         overlay_hide_from_capture=os.environ.get("RTT_OVERLAY_HIDE_FROM_CAPTURE", "0") == "1",
         mode=os.environ.get("RTT_MODE", "incremental"),

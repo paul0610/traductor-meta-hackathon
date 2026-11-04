@@ -258,7 +258,7 @@ Without it, the other side sees your lips move about 5 s before they hear the En
 4. Run the check again ([section 3](#3-check-the-setup)). It measures the webcam: 30 frames per second is the goal, and less makes the video choppy. Low light and other apps using the webcam lower it.
 5. Once, optionally, and outside any call: `uv run python scripts/calibrate_av_offset.py`. Face the camera and clap when it says so; it prints the offset between picture and voice, for `RTT_AV_OFFSET_MS`.
 
-In the call, pick `OBS Virtual Camera` once the button says `READY`: it shows a card saying your video reaches them 7 s late, and your webcam opens only with the click. Do not use your webcam in the call app as well: while another app holds it, the app gets about 1 frame per second. Your own voice goes out 20 dB under the English (`RTT_VOICE_UNDER_DB`). The self-view shows the delayed video, and with a shared screen the cursor runs 7 s ahead of the voice, so turn the dub off to share.
+In the call, pick `OBS Virtual Camera` once the button says `READY`: it shows a card saying your video reaches them 7 s late, and your webcam opens only with the click. Do not use your webcam in the call app as well: while another app holds it, the app gets about 1 frame per second. They hear only the English; `RTT_VOICE_UNDER_DB=-20` would mix your own voice in, 20 dB under it, like a TV dub. The self-view shows the delayed video, and with a shared screen the cursor runs 7 s ahead of the voice, so turn the dub off to share.
 
 ### 8. Settings
 
@@ -272,7 +272,7 @@ They live in `.env`, and `.env.example` explains each one. The ones you may need
 | `RTT_CAMERA_NAME` | `HD UVC` | With the dub: part of your webcam's name |
 | `RTT_DELAY_S` | `7.0` | With the dub, if the metrics line says `LATE` |
 | `RTT_AV_OFFSET_MS` | `0` | With the dub: the value `calibrate_av_offset.py` prints |
-| `RTT_VOICE_UNDER_DB` | `-20` | With the dub: your own voice under the English; `-inf` leaves it out |
+| `RTT_VOICE_UNDER_DB` | `-inf` | With the dub: your own voice under the English, in dB; `-inf` leaves it out, `-20` sounds like a TV dub |
 | `RTT_MMS_SPEAKING_RATE` | `1.45` | The pace of the English voice; lower is calmer, and the English then outlasts the Spanish |
 | `RTT_SOUNDS` | `1` | `0` silences the cues |
 | `RTT_META_PANEL` | `1` | `0` hides the panel of live calls to Meta's models |

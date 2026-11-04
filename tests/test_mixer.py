@@ -152,6 +152,13 @@ def test_dub_mutes_my_voice_with_minus_infinity(mixer):
     assert np.all(block_dub(mixer) == 0.0)
 
 
+def test_by_default_the_other_side_hears_only_english_even_with_the_dub(monkeypatch):
+    from interprete import config
+
+    monkeypatch.delenv("RTT_VOICE_UNDER_DB", raising=False)
+    assert config.load().voice_under_db == float("-inf")
+
+
 def test_dub_stays_between_clauses_with_the_tts_on_top_of_my_voice(dub):
     fill(dub)
     dub.play(tts(dur=0.005), 0.0)

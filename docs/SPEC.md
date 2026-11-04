@@ -48,7 +48,7 @@ When it happens and my voice is busy, the mixer finishes the clause it holds and
 
 ## 3. Operational safety
 
-- **The receiver only hears English.** That is why the output is a virtual microphone: at rest the cable carries silence, and raw Spanish reaches it alone only when I choose (F9), while the ASR is down, or if the outgoing chain dies. With the dub on, my own voice also plays 20 dB under the English (`RTT_VOICE_UNDER_DB`).
+- **The receiver only hears English.** That is why the output is a virtual microphone: at rest the cable carries silence, and raw Spanish reaches it alone only when I choose (F9), while the ASR is down, or if the outgoing chain dies. With the dub on, my own voice can play under the English (`RTT_VOICE_UNDER_DB`); since Nov 3 it is off by default, because heard on the other side it overlapped the translation.
 - Outgoing mixer states: `SILENT` (rest), `TTS`, `PASSTHROUGH` (raw voice), `MUTE`, plus `DUB` for piece 10 (state machine in §7.6).
 - The TTS takes over the cable only when its first PCM arrives. Errors, timeouts or cancellation clear the buffers and return to rest.
 - **Watchdog of 2 s** on the mixer callback and on scheduler progress.
